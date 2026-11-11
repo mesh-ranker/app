@@ -191,13 +191,13 @@ class WebViewActivity : AppCompatActivity() {
             val envelope = withContext(Dispatchers.IO) { api.handle("signIn", JSONObject().put("token", token).toString()) }
             binding.progress.visibility = View.GONE
             if (envelope.optBoolean("ok")) {
-                Toast.makeText(this@MainActivity, "Вход выполнен ($source)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@WebViewActivity, "Вход выполнен ($source)", Toast.LENGTH_SHORT).show()
                 updateTitle()
                 bridge.emitEvent("state", api.stateJson())
                 binding.webView.reload()
             } else {
                 val message = envelope.optJSONObject("error")?.optString("message") ?: "Не удалось войти"
-                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+                Toast.makeText(this@WebViewActivity, message, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -208,7 +208,7 @@ class WebViewActivity : AppCompatActivity() {
             val envelope = withContext(Dispatchers.IO) { api.handle("refreshToken", "{}") }
             binding.progress.visibility = View.GONE
             val message = if (envelope.optBoolean("ok")) "Токен обновлён" else envelope.optJSONObject("error")?.optString("message") ?: "Не удалось обновить токен"
-            Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@WebViewActivity, message, Toast.LENGTH_SHORT).show()
             if (envelope.optBoolean("ok")) bridge.emitEvent("state", api.stateJson())
         }
     }
