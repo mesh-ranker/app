@@ -15,7 +15,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun RankingScreen(store: SessionStore, personId: String?, onLogout: () -> Unit) {
+fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, onLogout: () -> Unit) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -23,15 +23,6 @@ fun RankingScreen(store: SessionStore, personId: String?, onLogout: () -> Unit) 
     var selectedSubject by remember { mutableStateOf("all") }
     var board by remember { mutableStateOf<JSONObject?>(null) }
     var date by remember { mutableStateOf(MeshCore.today()) }
-
-    val client = remember {
-        MeshClient(
-            baseUrl = MeshCore.HOST,
-            token = store.token,
-            profileId = store.studentId,
-            onToken = { newToken -> store.token = newToken }
-        )
-    }
 
     fun load() {
         loading = true

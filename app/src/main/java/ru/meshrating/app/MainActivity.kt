@@ -5,15 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +24,7 @@ class MainActivity : ComponentActivity() {
         val store = SessionStore(this)
         setContent {
             MeshRankerTheme {
-                AppRoot(store)
+                AppRoot(store, this)
             }
         }
     }
@@ -47,7 +44,7 @@ fun MeshRankerTheme(content: @Composable () -> Unit) {
 }
 
 @Composable
-fun AppRoot(store: SessionStore) {
+fun AppRoot(store: SessionStore, activity: MainActivity) {
     var token by remember { mutableStateOf(store.token ?: "") }
     var profile by remember { mutableStateOf<JSONObject?>(null) }
     var children by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -58,6 +55,15 @@ fun AppRoot(store: SessionStore) {
     var screen by remember { mutableStateOf(if (store.token != null) "ranking" else "login") }
     val scope = rememberCoroutineScope()
 
+    val client = remember {
+        MeshClient(
+            baseUrl = MeshCore.HOST,
+            token = store.token,
+            profileId = store.studentId,
+            onToken = { newToken -> store.token = newToken }
+        )
+    }
+
     if (screen == "login") {
         LoginScreen(
             onLogin = { rawToken ->
@@ -65,19 +71,18 @@ fun AppRoot(store: SessionStore) {
                 error = null
                 scope.launch {
                     try {
-                        val client = MeshClient(baseUrl = MeshCore.HOST, token = rawToken, profileId = null, timeoutMs = 20000, onToken = { newToken ->
-                            store.token = newToken
-                        })
                         val result = withContext(Dispatchers.IO) { client.signIn(rawToken) }
-                        store.save(result.optString("token", rawToken), result.optString("profileId"), result.optString("childId"), result.optString("parentName"))
-                        // fetch profile
+                        store.save(result.optString("token", rawToken), result.optString("profileId"), result.optString("child", null)?.let { JSONObject(it).optString("id") }, null)
                         val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
                         profile = prof
                         children = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
                         activeStudentId = children.firstOrNull()?.optString("id")
-                        activePersonId = children.firstOrNull()?.optString("personId") ?: children.firstOrNull()?.optString("contingent_guid")
+                        activePersonId = children.firstOrNull()?.optString("personId")
                         store.studentId = activeStudentId
+                        store.profileId = activeStudentId
                         token = result.optString("token", rawToken)
+                        client.token = token
+                        client.profileId = activeStudentId
                         screen = "ranking"
                     } catch (e: Exception) {
                         error = e.message ?: "Ошибка входа"
@@ -90,14 +95,45 @@ fun AppRoot(store: SessionStore) {
             error = error
         )
     } else {
-        RankingScreen(store = store, personId = activePersonId, onLogout = {
+        MainScaffold(store, client, activePersonId, activeStudentId, onLogout = {
             store.clear()
             token = ""
             profile = null
             children = emptyList()
             activeStudentId = null
+            activePersonId = null
             screen = "login"
         })
+    }
+}
+
+@Composable
+fun MainScaffold(store: SessionStore, client: MeshClient, personId: String?, studentId: String?, onLogout: () -> Unit) {
+    var currentTab by remember { mutableStateOf("ranking") }
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val items = listOf("ranking" to "Рейтинг", "subjects" to "Предметы", "marks" to "Оценки", "homeworks" to "ДЗ", "schedule" to "Расписание", "profile" to "Профиль", "settings" to "Настройки")
+                items.forEach { (key, label) ->
+                    NavigationBarItem(
+                        selected = currentTab == key,
+                        onClick = { currentTab = key },
+                        label = { Text(label) },
+                        icon = { }
+                    )
+                }
+            }
+        }
+    ) { padding ->
+        when (currentTab) {
+            "ranking" -> RankingScreen(store, client, personId, onLogout)
+            "subjects" -> SubjectsScreen(store, client, personId)
+            "marks" -> MarksScreen(store, client, studentId)
+            "homeworks" -> HomeworksScreen(store, client, studentId)
+            "schedule" -> ScheduleScreen(store, client, studentId)
+            "profile" -> ProfileScreen(store, client, onLogout)
+            "settings" -> SettingsScreen(store)
+        }
     }
 }
 
@@ -136,4 +172,3 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
         }
     }
 }
-
