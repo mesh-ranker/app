@@ -11,8 +11,8 @@
   --border: #2b3446;
   --text: #e8edf7;
   --text-dim: #9aa7bd;
-  --accent: #3b82f6;
-  --accent-soft: rgba(59, 130, 246, 0.16);
+  --accent: #d1d5db;
+  --accent-soft: rgba(209, 213, 219, 0.12);
   --green: #34d399;
   --yellow: #fbbf24;
   --orange: #fb923c;
@@ -34,8 +34,8 @@ html[data-theme="light"] {
   --border: #dde3ee;
   --text: #131722;
   --text-dim: #5d6b85;
-  --accent: #2563eb;
-  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent: #4b5563;
+  --accent-soft: rgba(75, 85, 99, 0.1);
   --green: #059669;
   --yellow: #d97706;
   --orange: #ea580c;
@@ -102,7 +102,7 @@ a { color: var(--accent); }
   justify-content: center;
   width: 40px; height: 40px;
   border-radius: 12px;
-  background: linear-gradient(145deg, var(--accent), #7c3aed);
+  background: var(--accent);
   color: #fff;
   font-weight: 700;
   font-size: 12.5px;
