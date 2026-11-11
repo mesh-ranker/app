@@ -41,18 +41,18 @@ jobs:
           cache-read-only: false
 
       - name: Права на gradlew
-        run: chmod +x android/gradlew
+        run: chmod +x ./gradlew
 
       - name: JVM-тесты ядра (без эмулятора)
-        working-directory: android
+        working-directory: .
         run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
 
       - name: Debug APK
-        working-directory: android
+        working-directory: .
         run: ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Release APK (без подписи, если нет keystore.properties)
-        working-directory: android
+        working-directory: .
         run: ./gradlew --no-daemon --stacktrace assembleRelease
 
       - name: Отчёты тестов при ошибке
@@ -60,7 +60,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-test-reports
-          path: android/app/build/reports/tests/**
+          path: app/build/reports/tests/**
           if-no-files-found: ignore
 
       - name: Загрузка APK
@@ -68,8 +68,8 @@ jobs:
         with:
           name: mesh-ranker-android
           path: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -78,8 +78,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            android/app/build/outputs/apk/debug/*.apk
-            android/app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
           fail_on_unmatched_files: false
           generate_release_notes: true
         env:
