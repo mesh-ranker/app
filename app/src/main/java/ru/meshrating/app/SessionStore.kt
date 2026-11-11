@@ -26,6 +26,7 @@ class SessionStore(context: Context) {
         private const val KEY_TOKEN = "token"
         private const val KEY_PROFILE_ID = "profileId"
         private const val KEY_STUDENT_ID = "studentId"
+        private const val KEY_PERSON_ID = "personId"
         private const val KEY_PARENT_NAME = "parentName"
         private const val KEY_NAMES = "names"
         private const val KEY_LAST_REFRESH = "lastRefresh"
@@ -81,6 +82,12 @@ class SessionStore(context: Context) {
             session.edit().putString(KEY_STUDENT_ID, value).apply()
         }
 
+    var personId: String?
+        get() = session.getString(KEY_PERSON_ID, null)
+        set(value) {
+            session.edit().putString(KEY_PERSON_ID, value).apply()
+        }
+
     var parentName: String?
         get() = session.getString(KEY_PARENT_NAME, null)
         set(value) {
@@ -94,11 +101,12 @@ class SessionStore(context: Context) {
         }
 
     /** Токен + кэш обновляются одной транзакцией — после входа/обновления токена. */
-    fun save(token: String?, profileId: String?, studentId: String?, parentName: String?) {
+    fun save(token: String?, profileId: String?, studentId: String?, personId: String?, parentName: String?) {
         session.edit().apply {
             if (token != null) putString(KEY_TOKEN, token)
             if (profileId != null) putString(KEY_PROFILE_ID, profileId)
             if (studentId != null) putString(KEY_STUDENT_ID, studentId)
+            if (personId != null) putString(KEY_PERSON_ID, personId)
             if (parentName != null) putString(KEY_PARENT_NAME, parentName)
             putLong(KEY_LAST_REFRESH, System.currentTimeMillis())
         }.apply()
@@ -120,6 +128,12 @@ class SessionStore(context: Context) {
         } catch (error: Exception) {
             mutableMapOf()
         }
+    }
+
+    fun saveName(id: String, name: String) {
+        val current = loadNameCache().toMutableMap()
+        current[id] = name
+        cache.edit().putString(KEY_NAMES, JSONObject(current as Map<*, *>).toString()).apply()
     }
 
     fun saveNameCache(names: Map<String, String>) {

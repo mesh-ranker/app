@@ -26,7 +26,8 @@ class MeshClient(
     private val timeoutMs: Int = 20_000,
     var autoRefresh: Boolean = true,
     private val onToken: ((String) -> Unit)? = null,
-    val nameCache: MutableMap<String, String> = mutableMapOf()
+    val nameCache: MutableMap<String, String> = mutableMapOf(),
+    private val onName: ((String, String) -> Unit)? = null
 ) {
 
     /** Счётчик запросов — используется в диагностике. */
@@ -244,6 +245,7 @@ class MeshClient(
             "Ученик ${key.take(8)}"
         }
         nameCache[key] = name
+        onName?.invoke(key, name)
         return name
     }
 

@@ -47,7 +47,7 @@ fun SubjectsScreen(store: SessionStore, client: MeshClient, personId: String?) {
                 items(subjects) { s ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(s.optString("name"), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(s.optString("name"), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                             Text(
                                 String.format("%.2f", s.optDouble("average", 0.0)),
                                 fontWeight = FontWeight.Bold,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -24,10 +25,11 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var homeworks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    val from = MeshCore.addDays(MeshCore.today(), -7)
-    val to = MeshCore.today()
+    var selectedDate by remember { mutableStateOf(MeshCore.today()) }
+    val from = MeshCore.addDays(selectedDate, -7)
+    val to = selectedDate
 
-    LaunchedEffect(studentId) {
+    LaunchedEffect(studentId, selectedDate) {
         if (studentId == null) { loading = false; return@LaunchedEffect }
         loading = true
         scope.launch {
@@ -42,6 +44,12 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
     }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+            IconButton(onClick = { selectedDate = MeshCore.addDays(selectedDate, -1) }) { Text("‹") }
+            Text(selectedDate, style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = { selectedDate = MeshCore.addDays(selectedDate, 1) }) { Text("›") }
+        }
+        Spacer(Modifier.height(8.dp))
         Text("Домашние задания", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         if (loading) CircularProgressIndicator()

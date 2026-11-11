@@ -33,8 +33,8 @@ fun SettingsScreen(store: SessionStore) {
         else {
             profile?.let { p ->
                 val child = p.optJSONObject("defaultChild")
-                Text("Ученик: ${child?.optString("firstName", "")} ${child?.optString("lastName", "")}")
                 Text("Класс: ${child?.optString("className", "")}")
+                Text("Школа: ${child?.optString("schoolName", "")}")
             }
             Spacer(Modifier.height(8.dp))
             Text("Токен: ${store.token?.take(8) ?: "—"}…")

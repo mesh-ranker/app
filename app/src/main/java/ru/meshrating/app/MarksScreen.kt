@@ -47,7 +47,7 @@ fun MarksScreen(store: SessionStore, client: MeshClient, studentId: String?) {
                 items(marks) { m ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(m.optString("subjectName"))
                                 Text(m.optString("date"), style = MaterialTheme.typography.bodySmall)
                                 val comment = m.optString("comment")

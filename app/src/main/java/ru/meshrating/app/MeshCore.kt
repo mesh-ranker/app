@@ -362,7 +362,7 @@ object MeshCore {
             .put("classId", asString(firstDefined(child.opt("class_id"), child.opt("classId"))))
             .put("className", asString(firstDefined(child.opt("class_name"), child.opt("className"))))
             .put("schoolId", asString(firstDefined(child.opt("school_id"), child.opt("schoolId"))))
-            .put("schoolName", asString(firstDefined(child.opt("school_name"), child.opt("schoolName"))))
+            .put("schoolName", asString(firstDefined(child.opt("school_name"), child.opt("schoolName"), child.optJSONObject("school")?.optString("name"))))
             .put("avatarUrl", asString(firstDefined(child.opt("avatar_url"), child.opt("avatarUrl"))))
     }
 
@@ -541,11 +541,20 @@ object MeshCore {
             val lessonObj = item.optJSONObject("lesson")
             val begin = asString(firstDefined(item.opt("begin_time"), item.opt("start_time"), item.opt("startTime"), item.opt("time_from")))
             val end = asString(firstDefined(item.opt("end_time"), item.opt("finish_time"), item.opt("endTime"), item.opt("time_to")))
-            val subject = firstDefined(
+            val subject = asString(firstDefined(
                 item.opt("subject_name"), item.opt("subjectName"),
                 lessonObj?.optString("subject_name"), lessonObj?.optString("subjectName"),
-                item.optJSONObject("subject")?.optString("name")
+                item.optJSONObject("subject")?.optString("name"), "—"
+            ))
+            // пропускаем пустые слоты (без предмета и времени)
+            if (subject == "—" && begin.isBlank() && end.isBlank()) return
+            val teacherObj = lessonObj?.optJSONObject("teacher") ?: item.optJSONObject("teacher")
+            val teacher = firstDefined(
+                item.opt("teacher_name"), item.opt("teacherName"),
+                teacherObj?.optString("fio"),
+                listOfNotNull(teacherObj?.optString("last_name"), teacherObj?.optString("first_name"), teacherObj?.optString("middle_name")).joinToString(" ").trim().takeIf { it.isNotBlank() }
             )
+            val room = firstDefined(item.opt("room_name"), item.opt("room"), item.opt("cabinet"), item.optJSONObject("room")?.optString("name"))
             val teacherObj = lessonObj?.optJSONObject("teacher") ?: item.optJSONObject("teacher")
             val teacher = firstDefined(
                 item.opt("teacher_name"), item.opt("teacherName"),

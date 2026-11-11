@@ -54,7 +54,7 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
     var profile by remember { mutableStateOf<JSONObject?>(null) }
     var children by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var activeStudentId by remember { mutableStateOf(store.studentId) }
-    var activePersonId by remember { mutableStateOf<String?>(null) }
+    var activePersonId by remember { mutableStateOf(store.personId) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (store.token != null) "ranking" else "login") }
@@ -65,7 +65,9 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
             baseUrl = MeshCore.HOST,
             token = store.token,
             profileId = store.studentId,
-            onToken = { newToken -> store.token = newToken }
+            nameCache = store.loadNameCache(),
+            onToken = { newToken -> store.token = newToken },
+            onName = { id, name -> store.saveName(id, name) }
         )
     }
 
@@ -78,14 +80,21 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
                     try {
                         val result = withContext(Dispatchers.IO) { client.signIn(rawToken) }
                         val childObj = result.optJSONObject("child")
-                        store.save(result.optString("token", rawToken), result.optString("profileId").takeIf { it.isNotBlank() }, childObj?.optString("id")?.takeIf { it.isNotBlank() }, null)
                         val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
                         profile = prof
                         children = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
                         activeStudentId = children.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }
                         activePersonId = children.firstOrNull()?.optString("personId")?.takeIf { it.isNotBlank() }
                             ?: children.firstOrNull()?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
+                        store.save(result.optString("token", rawToken), result.optString("profileId").takeIf { it.isNotBlank() }, activeStudentId, activePersonId, null)
                         store.studentId = activeStudentId
+                        store.personId = activePersonId
+                        store.profileId = activeStudentId
+                        token = result.optString("token", rawToken)
+                        client.token = token
+                        client.profileId = activeStudentId
+                        screen = "ranking"
+                        store.personId = activePersonId
                         store.profileId = activeStudentId
                         token = result.optString("token", rawToken)
                         client.token = token
