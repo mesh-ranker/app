@@ -47,7 +47,7 @@ fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, on
         }
     }
 
-    LaunchedEffect(date, selectedSubject) { load() }
+    LaunchedEffect(personId, date, selectedSubject) { load() }
 
     Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
         Text("Рейтинг", style = MaterialTheme.typography.headlineMedium)
