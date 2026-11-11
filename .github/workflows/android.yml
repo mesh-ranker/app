@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: android-${{ github.ref }}-dzundzun
+  group: android-v2-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
