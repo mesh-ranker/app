@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: android-${{ github.ref }}
+  group: android-${{ github.ref }}-dzun
   cancel-in-progress: true
 
 jobs:
