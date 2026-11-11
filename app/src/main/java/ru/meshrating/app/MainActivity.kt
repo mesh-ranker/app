@@ -72,12 +72,14 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { client.signIn(rawToken) }
-                        store.save(result.optString("token", rawToken), result.optString("profileId"), result.optString("child", null)?.let { JSONObject(it).optString("id") }, null)
+                        val childObj = result.optJSONObject("child")
+                        store.save(result.optString("token", rawToken), result.optString("profileId").takeIf { it.isNotBlank() }, childObj?.optString("id")?.takeIf { it.isNotBlank() }, null)
                         val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
                         profile = prof
                         children = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
-                        activeStudentId = children.firstOrNull()?.optString("id")
-                        activePersonId = children.firstOrNull()?.optString("personId")
+                        activeStudentId = children.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }
+                        activePersonId = children.firstOrNull()?.optString("personId")?.takeIf { it.isNotBlank() }
+                            ?: children.firstOrNull()?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
                         store.studentId = activeStudentId
                         store.profileId = activeStudentId
                         token = result.optString("token", rawToken)
