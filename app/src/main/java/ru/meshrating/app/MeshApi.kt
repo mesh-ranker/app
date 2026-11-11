@@ -63,7 +63,7 @@ class MeshApi(private val context: Context) {
         nameCache = store.loadNameCache(),
         onToken = { fresh ->
             // Автосохранение: МЭШ обновил токен в фоне — пользователю ничего делать не нужно
-            store.save(fresh, client?.profileId, activeStudentId, store.parentName)
+            store.save(fresh, client?.profileId, activeStudentId, store.personId, store.parentName)
             onTokenRefreshed?.invoke(MeshCore.maskToken(fresh))
             Log.i(TAG, "Токен МЭШ обновлён автоматически")
         }
@@ -123,8 +123,16 @@ class MeshApi(private val context: Context) {
         val result = ensureClient().signIn(rawToken)
         profile = result.optJSONObject("profile")
         children = extractChildren(profile)
-        activeStudentId = result.optJSONObject("child")?.optString("id")?.takeIf { it.isNotBlank() }
-        store.save(result.optString("token"), activeStudentId, activeStudentId, profile?.optJSONObject("parent")?.optString("name"))
+        val child = result.optJSONObject("child")
+        activeStudentId = child?.optString("id")?.takeIf { it.isNotBlank() }
+        val activePersonId = child?.optString("personId")?.takeIf { it.isNotBlank() }
+        store.save(
+            result.optString("token"),
+            activeStudentId,
+            activeStudentId,
+            activePersonId,
+            profile?.optJSONObject("parent")?.optString("name")
+        )
         lastError = null
         return stateJson()
     }
@@ -141,7 +149,7 @@ class MeshApi(private val context: Context) {
     fun refreshToken(): JSONObject {
         val fresh = ensureClient().refreshToken()
             ?: throw MeshCore.MeshError("МЭШ не выдал новый токен — войдите заново", "refresh-failed")
-        store.save(fresh, client?.profileId, activeStudentId, store.parentName)
+        store.save(fresh, client?.profileId, activeStudentId, store.personId, store.parentName)
         return stateJson()
     }
 
@@ -151,6 +159,8 @@ class MeshApi(private val context: Context) {
         activeStudentId = child.optString("id")
         client?.profileId = activeStudentId
         store.studentId = activeStudentId
+        store.profileId = activeStudentId
+        store.personId = child.optString("personId").takeIf { it.isNotBlank() }
         return stateJson()
     }
 
@@ -158,10 +168,12 @@ class MeshApi(private val context: Context) {
         val normalized = ensureClient().fetchProfile()
         profile = normalized
         children = extractChildren(normalized)
-        if (activeStudentId.isNullOrBlank()) {
-            activeStudentId = children.firstOrNull()?.optString("id")
-            client?.profileId = activeStudentId
-        }
+        val child = children.firstOrNull { it.optString("id") == activeStudentId } ?: children.firstOrNull()
+        if (activeStudentId.isNullOrBlank()) activeStudentId = child?.optString("id")
+        client?.profileId = activeStudentId
+        store.studentId = activeStudentId
+        store.profileId = activeStudentId
+        store.personId = child?.optString("personId")?.takeIf { it.isNotBlank() }
         return stateJson()
     }
 
@@ -272,7 +284,7 @@ class MeshApi(private val context: Context) {
         return try {
             val fresh = buildClient(token, store.profileId).refreshToken()
             if (fresh != null) {
-                store.save(fresh, store.profileId, store.studentId, store.parentName)
+                store.save(fresh, store.profileId, store.studentId, store.personId, store.parentName)
                 true
             } else {
                 false
