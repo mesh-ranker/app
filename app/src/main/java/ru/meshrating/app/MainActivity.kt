@@ -50,6 +50,7 @@ fun AppRoot(store: SessionStore) {
     var profile by remember { mutableStateOf<JSONObject?>(null) }
     var children by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var activeStudentId by remember { mutableStateOf(store.studentId) }
+    var activePersonId by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (store.token != null) "ranking" else "login") }
@@ -72,6 +73,7 @@ fun AppRoot(store: SessionStore) {
                         profile = prof
                         children = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
                         activeStudentId = children.firstOrNull()?.optString("id")
+                        activePersonId = children.firstOrNull()?.optString("personId") ?: children.firstOrNull()?.optString("contingent_guid")
                         store.studentId = activeStudentId
                         token = result.optString("token", rawToken)
                         screen = "ranking"
@@ -86,8 +88,7 @@ fun AppRoot(store: SessionStore) {
             error = error
         )
     } else {
-        // Placeholder for now; will be replaced with real screens
-        RankingScreenPlaceholder(onLogout = {
+        RankingScreen(store = store, personId = activePersonId, onLogout = {
             store.clear()
             token = ""
             profile = null
@@ -131,15 +132,3 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
     }
 }
 
-@Composable
-fun RankingScreenPlaceholder(onLogout: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Рейтинг (в разработке)", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onLogout) { Text("Выйти") }
-    }
-}
