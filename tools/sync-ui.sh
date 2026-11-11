@@ -5,7 +5,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-assets="$root/android/app/src/main/assets"
+assets="$root/app/src/main/assets"
 
 mkdir -p "$assets"
 rm -rf "$assets/ui" "$assets/core"

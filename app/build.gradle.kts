@@ -74,10 +74,10 @@ android {
 val syncSharedUi by tasks.registering(Sync::class) {
     description = "Копирует shared/ui и shared/core в assets приложения"
     into(layout.projectDirectory.dir("src/main/assets"))
-    from(rootProject.layout.projectDirectory.dir("../shared/ui")) {
+    from(rootProject.layout.projectDirectory.dir("shared/ui")) {
         into("ui")
     }
-    from(rootProject.layout.projectDirectory.dir("../shared/core")) {
+    from(rootProject.layout.projectDirectory.dir("shared/core")) {
         into("core")
     }
     doFirst {
