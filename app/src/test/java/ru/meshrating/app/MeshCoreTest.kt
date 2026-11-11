@@ -152,7 +152,7 @@ class MeshCoreTest {
         assertEquals(3, lessons.length())
         assertEquals("08:30", lessons.getJSONObject(0).getString("begin"))
         assertEquals("Геометрия", lessons.getJSONObject(1).getString("subject"))
-        assertEquals(MeshCore.today(), lessons.getJSONObject(2).getString("date"))
+        assertEquals("2026-10-12", lessons.getJSONObject(2).getString("date"))
     }
 
     @Test
