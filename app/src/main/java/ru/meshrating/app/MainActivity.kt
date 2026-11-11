@@ -1,240 +1,85 @@
 package ru.meshrating.app
 
-import android.Manifest
-import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
-import android.view.View
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import ru.meshrating.app.databinding.ActivityMainBinding
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 
-/**
- * Главный экран Android-версии: WebView с общим интерфейсом (shared/ui)
- * и нативное меню (обновить, вход, демо-режим, выход).
- *
- * Все данные приложение получает через MeshAndroidBridge → MeshApi → MeshClient.
- */
-class MainActivity : AppCompatActivity() {
-
-    companion object {
-        private const val UI_URL = "file:///android_asset/ui/index.html"
-    }
-
-    private lateinit var binding: ActivityMainBinding
-    private lateinit var api: MeshApi
-    private lateinit var bridge: MeshAndroidBridge
-    private val scope = CoroutineScope(Dispatchers.Main + Job())
-
-    private val loginLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode != Activity.RESULT_OK) {
-            Toast.makeText(this, "Вход отменён", Toast.LENGTH_SHORT).show()
-            return@registerForActivityResult
-        }
-        val token = result.data?.getStringExtra(MeshLoginActivity.EXTRA_TOKEN) ?: return@registerForActivityResult
-        val source = result.data?.getStringExtra(MeshLoginActivity.EXTRA_SOURCE) ?: "МЭШ"
-        signIn(token, source)
-    }
-
-    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-
+class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
-
-        api = MeshApi(this)
-        api.onTokenRefreshed = { mask ->
-            // Токен обновился автоматически — сообщаем интерфейсу и обновляем заголовок
-            bridge.emitEvent("token", JSONObject().put("mask", mask))
-        }
-        api.onSessionLost = { bridge.emitEvent("status", JSONObject().put("message", "Сессия МЭШ истекла — войдите заново").put("type", "error")) }
-
-        bridge = MeshAndroidBridge(api, { binding.webView }, scope)
-        setupWebView()
-        requestNotificationPermission()
-        binding.retryButton.setOnClickListener {
-            binding.offlinePanel.visibility = View.GONE
-            binding.webView.reload()
+        setContent {
+            MeshRankerTheme {
+                ComposeApp(this)
+            }
         }
     }
+}
 
-    private fun setupWebView() {
-        binding.webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            databaseEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            setSupportZoom(false)
-            builtInZoomControls = false
-            mediaPlaybackRequiresUserGesture = true
-        }
-        @Suppress("DEPRECATION")
-        binding.webView.settings.allowFileAccessFromFileURLs = true
-        @Suppress("DEPRECATION")
-        binding.webView.settings.allowUniversalAccessFromFileURLs = true
+@Composable
+fun MeshRankerTheme(content: @Composable () -> Unit) {
+    val darkColors = darkColorScheme(
+        primary = Color(0xFFD1D5DB),
+        background = Color(0xFF10131A),
+        surface = Color(0xFF1B2130),
+        onPrimary = Color(0xFF111111),
+        onBackground = Color(0xFFE8EDF7),
+        onSurface = Color(0xFFE8EDF7)
+    )
+    MaterialTheme(colorScheme = darkColors, content = content)
+}
 
-        binding.webView.addJavascriptInterface(bridge, MeshAndroidBridge.NAME)
-        binding.webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                binding.progress.visibility = View.GONE
-                updateTitle()
-            }
-
-            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) {
-                    binding.offlinePanel.visibility = View.VISIBLE
-                    binding.progress.visibility = View.GONE
+@Composable
+fun ComposeApp(activity: MainActivity) {
+    val navController = rememberNavController()
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                val items = listOf("Рейтинг", "Предметы", "Оценки", "ДЗ", "Расписание", "Профиль", "Настройки")
+                items.forEach { label ->
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = { },
+                        label = { Text(label) },
+                        icon = { }
+                    )
                 }
             }
         }
-        binding.webView.loadUrl(UI_URL)
-    }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            if (granted != PackageManager.PERMISSION_GRANTED) {
-                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Нативная версия в разработке", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(8.dp))
+            Text("Полный функционал пока в WebView-версии.")
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = {
+                activity.startActivity(Intent(activity, WebViewActivity::class.java))
+            }) { Text("Открыть полную версию (WebView)") }
         }
-    }
-
-    private fun updateTitle() {
-        val name = api.activeStudentName()
-        supportActionBar?.title = if (api.isDemo) {
-            "${getString(R.string.app_name)} · ${getString(R.string.demo_badge)}"
-        } else if (name != null) {
-            "${getString(R.string.app_name)} · $name"
-        } else {
-            getString(R.string.app_name)
-        }
-        invalidateOptionsMenu()
-    }
-
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main, menu)
-        menu.findItem(R.id.action_demo)?.isChecked = api.isDemo
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
-            R.id.action_refresh -> {
-                binding.progress.visibility = View.VISIBLE
-                binding.webView.reload()
-                return true
-            }
-            R.id.action_login -> {
-                loginLauncher.launch(Intent(this, MeshLoginActivity::class.java))
-                return true
-            }
-            R.id.action_refresh_token -> {
-                refreshToken()
-                return true
-            }
-            R.id.action_demo -> {
-                item.isChecked = !item.isChecked
-                api.setDemo(item.isChecked)
-                Toast.makeText(this, if (item.isChecked) "Демо-режим включён" else "Демо-режим выключен", Toast.LENGTH_SHORT).show()
-                updateTitle()
-                binding.webView.reload()
-                return true
-            }
-            R.id.action_sign_out -> {
-                confirmSignOut()
-                return true
-            }
-            R.id.action_open_mesh -> {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(MeshCore.loginUrl())))
-                return true
-            }
-            R.id.action_about -> {
-                AlertDialog.Builder(this)
-                    .setTitle(getString(R.string.about_title))
-                    .setMessage(
-                        getString(R.string.about_message) +
-                            "\n\nХранилище токена: " + (if (api.store.isEncrypted()) "шифрованное (Android Keystore)" else "приватное хранилище приложения") +
-                            "\nПлатформа: Android ${Build.VERSION.RELEASE}"
-                    )
-                    .setPositiveButton(R.string.about_close, null)
-                    .show()
-                return true
-            }
-        }
-        return super.onOptionsItemSelected(item)
-    }
-
-    private fun signIn(token: String, source: String) {
-        binding.progress.visibility = View.VISIBLE
-        scope.launch {
-            val envelope = withContext(Dispatchers.IO) { api.handle("signIn", JSONObject().put("token", token).toString()) }
-            binding.progress.visibility = View.GONE
-            if (envelope.optBoolean("ok")) {
-                Toast.makeText(this@MainActivity, "Вход выполнен ($source)", Toast.LENGTH_SHORT).show()
-                updateTitle()
-                bridge.emitEvent("state", api.stateJson())
-                binding.webView.reload()
-            } else {
-                val message = envelope.optJSONObject("error")?.optString("message") ?: "Не удалось войти"
-                Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun refreshToken() {
-        binding.progress.visibility = View.VISIBLE
-        scope.launch {
-            val envelope = withContext(Dispatchers.IO) { api.handle("refreshToken", "{}") }
-            binding.progress.visibility = View.GONE
-            val message = if (envelope.optBoolean("ok")) "Токен обновлён" else envelope.optJSONObject("error")?.optString("message") ?: "Не удалось обновить токен"
-            Toast.makeText(this@MainActivity, message, Toast.LENGTH_SHORT).show()
-            if (envelope.optBoolean("ok")) bridge.emitEvent("state", api.stateJson())
-        }
-    }
-
-    private fun confirmSignOut() {
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.menu_sign_out))
-            .setMessage("Удалить сохранённый токен МЭШ с этого устройства?")
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
-                api.handle("signOut", "{}")
-                Toast.makeText(this, "Вы вышли из МЭШ", Toast.LENGTH_SHORT).show()
-                updateTitle()
-                binding.webView.reload()
-            }
-            .show()
-    }
-
-    @Deprecated("Устаревший API, но нужен для WebView-навигации")
-    override fun onBackPressed() {
-        if (binding.webView.canGoBack()) binding.webView.goBack() else super.onBackPressed()
-    }
-
-    override fun onDestroy() {
-        binding.webView.removeJavascriptInterface(MeshAndroidBridge.NAME)
-        api.dispose()
-        super.onDestroy()
     }
 }
