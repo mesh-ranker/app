@@ -1,7 +1,6 @@
 name: Android
 
-# Сборка APK: JVM-тесты ядра, debug-сборка для проверки и release-сборка (без подписи)
-# По тегу v* артефакт прикрепляется к релизу.
+# Сборка APK: JVM-тесты ядра и debug-сборка. По тегу v* debug-APK прикрепляется к релизу.
 
 on:
   push:
@@ -51,10 +50,6 @@ jobs:
         working-directory: .
         run: ./gradlew --no-daemon --stacktrace assembleDebug
 
-      - name: Release APK (без подписи, если нет keystore.properties)
-        working-directory: .
-        run: ./gradlew --no-daemon --stacktrace assembleRelease
-
       - name: Отчёты тестов при ошибке
         if: failure()
         uses: actions/upload-artifact@v4
@@ -69,7 +64,6 @@ jobs:
           name: mesh-ranker-android
           path: |
             app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
 
@@ -79,7 +73,6 @@ jobs:
         with:
           files: |
             app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
           fail_on_unmatched_files: false
           generate_release_notes: true
         env:
