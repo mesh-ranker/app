@@ -47,7 +47,8 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
                         Column(modifier = Modifier.padding(12.dp)) {
                             Text(h.optString("subjectName"), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                             Text(h.optString("description"), style = MaterialTheme.typography.bodySmall)
-                            Text("Сдать до: ${h.optString("dueDate", "—")}", style = MaterialTheme.typography.bodySmall)
+                            val due = h.optString("dueDate").takeIf { it.isNotBlank() && it != "null" } ?: "—"
+                            Text("Сдать до: $due", style = MaterialTheme.typography.bodySmall)
                             Text(if (h.optBoolean("isDone")) "выполнено" else "не выполнено", style = MaterialTheme.typography.bodySmall)
                         }
                     }

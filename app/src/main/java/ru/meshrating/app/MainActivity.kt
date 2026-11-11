@@ -129,14 +129,16 @@ fun MainScaffold(store: SessionStore, client: MeshClient, personId: String?, stu
             }
         }
     ) { padding ->
-        when (currentTab) {
-            "ranking" -> RankingScreen(store, client, personId, onLogout)
-            "subjects" -> SubjectsScreen(store, client, personId)
-            "marks" -> MarksScreen(store, client, studentId)
-            "homeworks" -> HomeworksScreen(store, client, studentId)
-            "schedule" -> ScheduleScreen(store, client, studentId)
-            "profile" -> ProfileScreen(store, client, onLogout)
-            "settings" -> SettingsScreen(store)
+        Box(modifier = Modifier.padding(padding)) {
+            when (currentTab) {
+                "ranking" -> RankingScreen(store, client, personId, onLogout)
+                "subjects" -> SubjectsScreen(store, client, personId)
+                "marks" -> MarksScreen(store, client, studentId)
+                "homeworks" -> HomeworksScreen(store, client, studentId)
+                "schedule" -> ScheduleScreen(store, client, studentId)
+                "profile" -> ProfileScreen(store, client, onLogout)
+                "settings" -> SettingsScreen(store)
+            }
         }
     }
 }

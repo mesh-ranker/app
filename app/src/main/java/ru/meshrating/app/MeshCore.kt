@@ -343,6 +343,7 @@ object MeshCore {
         json.optJSONArray("items") != null -> json.optJSONArray("items")!!
         json.optJSONArray("data") != null -> json.optJSONArray("data")!!
         json.optJSONArray("lessons") != null -> json.optJSONArray("lessons")!!
+        json.optJSONArray("activities") != null -> json.optJSONArray("activities")!!
         else -> JSONArray()
     }
 
@@ -519,7 +520,7 @@ object MeshCore {
         .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
 
     fun normalizeHomework(item: JSONObject): JSONObject {
-        val due = asString(firstDefined(item.opt("date_prepared"), item.opt("deadline"), item.opt("due_date")))
+        val due = asString(firstDefined(item.opt("date_prepared_for"), item.opt("date_prepared"), item.opt("deadline"), item.opt("due_date")))
         return JSONObject()
             .put("id", asString(firstDefined(item.opt("homework_entry_student_id"), item.opt("homework_id"), item.opt("id"))))
             .put("subjectId", asString(firstDefined(item.opt("subject_id"), item.opt("subjectId"))))
@@ -536,26 +537,43 @@ object MeshCore {
         val lessons = JSONArray()
         fun push(item: JSONObject?, dayIso: String?) {
             if (item == null) return
+            val lessonObj = item.optJSONObject("lesson")
             val begin = asString(firstDefined(item.opt("begin_time"), item.opt("start_time"), item.opt("startTime"), item.opt("time_from")))
             val end = asString(firstDefined(item.opt("end_time"), item.opt("finish_time"), item.opt("endTime"), item.opt("time_to")))
-            val subject = item.optJSONObject("subject")?.optString("name")
-            val teacher = item.optJSONObject("teacher")?.optString("fio")
-            val room = item.optJSONObject("room")?.optString("name")
+            val subject = firstDefined(
+                item.opt("subject_name"), item.opt("subjectName"),
+                lessonObj?.optString("subject_name"), lessonObj?.optString("subjectName"),
+                item.optJSONObject("subject")?.optString("name")
+            )
+            val teacherObj = lessonObj?.optJSONObject("teacher") ?: item.optJSONObject("teacher")
+            val teacher = firstDefined(
+                item.opt("teacher_name"), item.opt("teacherName"),
+                teacherObj?.optString("fio"),
+                listOfNotNull(teacherObj?.optString("last_name"), teacherObj?.optString("first_name"), teacherObj?.optString("middle_name")).joinToString(" ").trim().takeIf { it.isNotBlank() }
+            )
+            val room = firstDefined(item.opt("room_name"), item.opt("room"), item.opt("cabinet"), item.optJSONObject("room")?.optString("name"))
             lessons.put(
                 JSONObject()
                     .put("date", toIso(asString(firstDefined(item.opt("date"), item.opt("day"), dayIso, defaultDate))))
                     .put("number", asNullableInt(firstDefined(item.opt("lesson_number"), item.opt("number"))) ?: JSONObject.NULL)
                     .put("begin", if (begin.isBlank()) JSONObject.NULL else begin.take(5))
                     .put("end", if (end.isBlank()) JSONObject.NULL else end.take(5))
-                    .put("subject", asString(firstDefined(item.opt("subject_name"), item.opt("subjectName"), subject, "—")))
-                    .put("teacher", asString(firstDefined(item.opt("teacher_name"), item.opt("teacherName"), teacher)))
-                    .put("room", asString(firstDefined(item.opt("room_name"), item.opt("room"), item.opt("cabinet"), room)))
+                    .put("subject", asString(firstDefined(subject, "—")))
+                    .put("teacher", asString(firstDefined(teacher)))
+                    .put("room", asString(firstDefined(room)))
                     .put("homework", asString(firstDefined(item.opt("homework"), item.opt("home_task"), item.opt("description"))))
                     .put("mark", asNullableDouble(firstDefined(item.opt("mark"), item.opt("mark_value"))) ?: JSONObject.NULL)
                     .put("isCancelled", asBool(firstDefined(item.opt("is_cancel"), item.opt("isCancelled"))))
             )
         }
 
+        // activities — формат расписания МЭШ (begin_time, lesson.subject_name, lesson.teacher, room_name)
+        val activities = json?.optJSONArray("activities")
+        if (activities != null) {
+            for (i in 0 until activities.length()) {
+                activities.optJSONObject(i)?.let { push(it, defaultDate) }
+            }
+        }
         val list = payloadList(json)
         for (i in 0 until list.length()) {
             val entry = list.optJSONObject(i) ?: continue

@@ -2,6 +2,7 @@ package ru.meshrating.app
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -62,11 +63,13 @@ fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, on
             Spacer(Modifier.height(8.dp))
         }
 
-        // Subject chips
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            FilterChip(selected = selectedSubject == "all", onClick = { selectedSubject = "all" }, label = { Text("Общий") })
-            subjects.take(5).forEach { s ->
-                FilterChip(selected = selectedSubject == s.optString("id"), onClick = { selectedSubject = s.optString("id") }, label = { Text(s.optString("name")) })
+        // Subject chips: horizontal scroll, no wrap
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            item {
+                FilterChip(selected = selectedSubject == "all", onClick = { selectedSubject = "all" }, label = { Text("Общий", maxLines = 1) })
+            }
+            items(subjects) { s ->
+                FilterChip(selected = selectedSubject == s.optString("id"), onClick = { selectedSubject = s.optString("id") }, label = { Text(s.optString("name"), maxLines = 1) })
             }
         }
         Spacer(Modifier.height(8.dp))

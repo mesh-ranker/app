@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -46,7 +47,7 @@ fun SubjectsScreen(store: SessionStore, client: MeshClient, personId: String?) {
                 items(subjects) { s ->
                     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(s.optString("name"))
+                            Text(s.optString("name"), maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 String.format("%.2f", s.optDouble("average", 0.0)),
                                 fontWeight = FontWeight.Bold,
