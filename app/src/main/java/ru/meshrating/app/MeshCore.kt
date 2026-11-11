@@ -511,6 +511,7 @@ object MeshCore {
     fun normalizeMark(mark: JSONObject): JSONObject = JSONObject()
         .put("id", asString(firstDefined(mark.opt("id"), mark.opt("mark_id"))))
         .put("value", asNullableDouble(firstDefined(mark.opt("value"), mark.opt("mark"))) ?: JSONObject.NULL)
+        .put("markText", asString(firstDefined(mark.opt("value"), mark.opt("mark"))))
         .put("subjectId", asString(firstDefined(mark.opt("subject_id"), mark.opt("subjectId"))))
         .put("subjectName", asString(firstDefined(mark.opt("subject_name"), mark.opt("subjectName"), "—")))
         .put("controlForm", asString(firstDefined(mark.opt("control_form_name"), mark.opt("controlForm"), "—")))

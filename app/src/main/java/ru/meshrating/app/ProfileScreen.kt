@@ -38,7 +38,7 @@ fun ProfileScreen(store: SessionStore, client: MeshClient, onLogout: () -> Unit)
         else {
             profile?.let { p ->
                 val child = p.optJSONObject("defaultChild")
-                Text("Ученик: ${child?.optString("firstName", "")} ${child?.optString("lastName", "")}")
+                Text("Ученик: ${child?.optString("name", "")}")
                 Text("Класс: ${child?.optString("className", "")}")
                 Text("Школа: ${child?.optString("schoolName", "")}")
             }

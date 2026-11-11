@@ -1,6 +1,7 @@
 package ru.meshrating.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -99,6 +102,24 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
             error = error
         )
     } else {
+        // Fetch profile on reopen if needed
+        LaunchedEffect(activePersonId) {
+            if (activePersonId == null) {
+                scope.launch {
+                    try {
+                        val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
+                        profile = prof
+                        val ch = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
+                        children = ch
+                        activeStudentId = ch.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() } ?: activeStudentId
+                        activePersonId = ch.firstOrNull()?.optString("personId")?.takeIf { it.isNotBlank() }
+                            ?: ch.firstOrNull()?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
+                        store.studentId = activeStudentId
+                        store.profileId = activeStudentId
+                    } catch (_: Exception) { }
+                }
+            }
+        }
         MainScaffold(store, client, activePersonId, activeStudentId, onLogout = {
             store.clear()
             token = ""
@@ -153,7 +174,16 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
     ) {
         Text("Вход в МЭШ", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.height(8.dp))
-        Text("1. Откройте https://school.mos.ru/v2/token/refresh?roleId=2&subsystem=2", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val context = LocalContext.current
+        val url = "https://school.mos.ru/v2/token/refresh?roleId=2&subsystem=2"
+        Text(
+            text = "1. Откройте: $url",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.clickable {
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            }
+        )
         Text("2. Скопируйте токен и вставьте сюда", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(

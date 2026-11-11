@@ -50,14 +50,17 @@ fun MarksScreen(store: SessionStore, client: MeshClient, studentId: String?) {
                             Column {
                                 Text(m.optString("subjectName"))
                                 Text(m.optString("date"), style = MaterialTheme.typography.bodySmall)
+                                val comment = m.optString("comment")
+                                if (comment.isNotBlank()) Text(comment, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Text(
-                                m.opt("value")?.toString() ?: "—",
+                                m.optString("markText", "—"),
                                 fontWeight = FontWeight.Bold,
                                 color = when {
                                     (m.optDouble("value", 0.0)) >= 4.5 -> Color(0xFF34D399)
                                     (m.optDouble("value", 0.0)) >= 3.5 -> Color(0xFFFBBF24)
-                                    else -> Color(0xFFF87171)
+                                    (m.optDouble("value", -1.0)) >= 0 -> Color(0xFFF87171)
+                                    else -> Color(0xFF9AA7BD)
                                 }
                             )
                         }
