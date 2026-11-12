@@ -42,5 +42,13 @@
             android:exported="false"
             android:label="@string/login_title"
             android:theme="@style/Theme.MeshRanker.Login" />
+
+        <!-- Второй способ: обычный вход на school.mos.ru с перехватом токена -->
+        <activity
+            android:name=".SchoolLoginActivity"
+            android:exported="false"
+            android:label="@string/login_title"
+            android:theme="@style/Theme.MeshRanker.Login"
+            android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>

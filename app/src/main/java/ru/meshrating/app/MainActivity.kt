@@ -318,7 +318,7 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
     val url = MeshCore.loginUrl()
     val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val token = result.data?.getStringExtra(MeshLoginActivity.EXTRA_TOKEN)
+            val token = result.data?.getStringExtra(SchoolLoginActivity.EXTRA_TOKEN)
             if (!token.isNullOrBlank()) onLogin(token)
         }
     }
@@ -382,10 +382,7 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = {
-                webLogin.launch(
-                    Intent(context, MeshLoginActivity::class.java)
-                        .putExtra(MeshLoginActivity.EXTRA_START_URL, MeshCore.HOST)
-                )
+                webLogin.launch(Intent(context, SchoolLoginActivity::class.java))
             },
             enabled = !loading,
             modifier = Modifier.fillMaxWidth()

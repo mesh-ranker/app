@@ -605,7 +605,8 @@ object MeshCore {
                     .put("actionId", material.optInt("action_id"))
                     .put("actionName", material.optString("action_name"))
                     .put("uuid", material.optString("uuid"))
-                    .put("materialId", asString(firstDefined(material.opt("id"), material.opt("uuid"))))
+                    // Для launch-запроса МЭШ нужен uuid цифрового материала.
+                    .put("materialId", asString(firstDefined(material.opt("uuid"), material.opt("id"))))
                     .put("url", urls.firstOrNull().orEmpty())
                     .put("urls", JSONArray(urls))
             )

@@ -74,8 +74,8 @@ fun HomeworksScreen(
             openUrl(uriHandler, directUrl, context)
             return
         }
-        val materialId = material.optString("materialId")
-            .ifBlank { material.optString("uuid") }
+        val materialId = material.optString("uuid")
+            .ifBlank { material.optString("materialId") }
             .trim()
         if (homeworkEntryId.isBlank() || materialId.isBlank()) return
         launchingMaterialId = materialId
@@ -278,8 +278,8 @@ private fun HomeworkCard(
                             material.optString("typeName").ifBlank { "Материал" }
                         }
                         val url = material.optString("url").trim()
-                        val materialId = material.optString("materialId")
-                            .ifBlank { material.optString("uuid") }
+                        val materialId = material.optString("uuid")
+                            .ifBlank { material.optString("materialId") }
                             .trim()
                         val canOpen = url.isNotBlank() || materialId.isNotBlank()
                         val action = material.optString("actionName").trim()
@@ -288,6 +288,7 @@ private fun HomeworkCard(
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .defaultMinSize(minHeight = 40.dp)
                                 .then(
                                     if (canOpen) {
                                         Modifier.clickable { onOpenMaterial(homeworkEntryId, material) }
