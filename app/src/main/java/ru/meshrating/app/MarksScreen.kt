@@ -455,13 +455,17 @@ private fun FinalMarksSection(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val selectedYear = years.firstOrNull { it.optString("id") == selectedYearId }
-    // В выпадающем списке сначала текущий год, затем остальные от новых к старым,
+    // В выпадающем списке: без будущих годов, сначала текущий, затем от новых к старым,
     // чтобы текущий год не прятался в конце длинного списка.
     val orderedYears = remember(years) {
-        years.sortedWith(
-            compareByDescending<JSONObject> { it.optBoolean("currentYear") }
-                .thenByDescending { it.optString("beginDate") }
-        )
+        val today = MeshCore.today()
+        years.asSequence()
+            .filter { it.optString("beginDate").let { begin -> begin.isBlank() || begin <= today } }
+            .sortedWith(
+                compareByDescending<JSONObject> { it.optBoolean("currentYear") }
+                    .thenByDescending { it.optString("beginDate") }
+            )
+            .toList()
     }
 
     // Колонки — только те периоды, по которым реально пришли отметки (в порядке API).
