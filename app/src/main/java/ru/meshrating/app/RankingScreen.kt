@@ -17,12 +17,19 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, onLogout: () -> Unit) {
+fun RankingScreen(
+    store: SessionStore,
+    client: MeshClient,
+    personId: String?,
+    onLogout: () -> Unit,
+    selectedSubjectId: String? = null,
+    onSubjectChange: (String?) -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(personId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var subjects by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var selectedSubject by remember { mutableStateOf("all") }
+    val selectedSubject = selectedSubjectId ?: "all"
     var board by remember { mutableStateOf<JSONObject?>(null) }
     val date = MeshCore.today()
 
@@ -90,14 +97,14 @@ fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, on
             item {
                 FilterChip(
                     selected = selectedSubject == "all",
-                    onClick = { selectedSubject = "all" },
+                    onClick = { onSubjectChange(null) },
                     label = { Text("Общий", maxLines = 1) }
                 )
             }
             items(subjects) { s ->
                 FilterChip(
                     selected = selectedSubject == s.optString("id"),
-                    onClick = { selectedSubject = s.optString("id") },
+                    onClick = { onSubjectChange(s.optString("id").takeIf { it.isNotBlank() }) },
                     label = {
                         Text(
                             s.optString("name") + " · " + formatMark(if (s.isNull("average")) null else s.optDouble("average")),

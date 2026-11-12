@@ -36,6 +36,7 @@ object MeshCore {
         const val MARKS = "/api/family/web/v1/marks"
         const val SUBJECT_MARKS = "/api/family/web/v1/subject_marks"
         const val HOMEWORKS = "/api/family/web/v1/homeworks"
+        const val HOMEWORK_LAUNCH = "/api/ej/partners/v1/homeworks/launch"
         const val SCHEDULE = "/api/family/web/v1/schedule"
         const val TOKEN_REFRESH = "/v2/token/refresh"
         const val USER_INFO = "/v3/userinfo"
@@ -537,6 +538,45 @@ object MeshCore {
         .put("comment", asString(mark.opt("comment")))
         .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
 
+    /** Приводит относительную ссылку МЭШ к абсолютному URL. */
+    fun absoluteUrl(raw: String?): String {
+        val text = raw?.trim().orEmpty()
+        if (text.isBlank()) return ""
+        if (text.startsWith("//")) return "https:$text"
+        if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:").containsMatchIn(text)) return text
+        return HOST + if (text.startsWith("/")) text else "/$text"
+    }
+
+    private fun collectMaterialUrls(value: Any?, out: MutableSet<String>, depth: Int = 0) {
+        if (value == null || value == JSONObject.NULL || depth > 5) return
+        when (value) {
+            is String -> absoluteUrl(value).takeIf { it.isNotBlank() }?.let(out::add)
+            is JSONArray -> for (i in 0 until value.length()) {
+                collectMaterialUrls(value.opt(i), out, depth + 1)
+            }
+            is JSONObject -> {
+                listOf(
+                    "url", "link", "href", "address",
+                    "web_url", "webUrl", "action_url", "actionUrl",
+                    "target_url", "targetUrl", "resource_url", "resourceUrl"
+                ).forEach { key ->
+                    if (value.has(key)) collectMaterialUrls(value.opt(key), out, depth + 1)
+                }
+                // Ссылки иногда лежат во вложенных объектах action/target/resource.
+                listOf("urls", "action", "target", "resource").forEach { key ->
+                    if (value.has(key)) collectMaterialUrls(value.opt(key), out, depth + 1)
+                }
+            }
+            else -> Unit
+        }
+    }
+
+    private fun materialUrls(material: JSONObject): List<String> {
+        val out = linkedSetOf<String>()
+        collectMaterialUrls(material, out)
+        return out.toList()
+    }
+
     fun normalizeHomework(item: JSONObject): JSONObject {
         val due = asString(
             firstDefined(
@@ -554,23 +594,27 @@ object MeshCore {
         val attachments = JSONArray()
         for (i in 0 until rawMaterials.length()) {
             val material = rawMaterials.optJSONObject(i) ?: continue
-            val urls = material.optJSONArray("urls") ?: JSONArray()
             val type = material.optString("type")
+            val title = asString(firstDefined(material.opt("title"), material.opt("name")))
+            val urls = materialUrls(material)
             materials.put(
                 JSONObject()
                     .put("type", type)
                     .put("typeName", material.optString("type_name"))
-                    .put("title", asString(firstDefined(material.opt("title"), material.opt("name"))))
+                    .put("title", title)
+                    .put("actionId", material.optInt("action_id"))
                     .put("actionName", material.optString("action_name"))
-                    .put("url", urls.optJSONObject(0)?.optString("url").orEmpty())
+                    .put("uuid", material.optString("uuid"))
+                    .put("materialId", asString(firstDefined(material.opt("id"), material.opt("uuid"))))
+                    .put("url", urls.firstOrNull().orEmpty())
+                    .put("urls", JSONArray(urls))
             )
             // Файлы МЭШ приходят внутри materials с type=attachments.
-            for (j in 0 until urls.length()) {
-                val url = urls.optJSONObject(j)?.optString("url").orEmpty()
-                if (url.isNotBlank() && (type == "attachments" || type == "file" || type == "files")) {
+            if (type.lowercase(Locale.US) in setOf("attachment", "attachments", "file", "files")) {
+                urls.forEachIndexed { index, url ->
                     attachments.put(
                         JSONObject()
-                            .put("name", asString(firstDefined(material.opt("title"), material.opt("name"))))
+                            .put("name", if (urls.size > 1) "$title ${index + 1}" else title)
                             .put("url", url)
                     )
                 }
@@ -583,11 +627,33 @@ object MeshCore {
             attachments.put(
                 JSONObject()
                     .put("name", asString(firstDefined(attachment.opt("name"), attachment.opt("file_name"))))
-                    .put("url", asString(firstDefined(attachment.opt("url"), attachment.opt("link"))))
+                    .put(
+                        "url",
+                        absoluteUrl(
+                            asString(
+                                firstDefined(
+                                    attachment.opt("url"),
+                                    attachment.opt("link"),
+                                    attachment.opt("href"),
+                                    attachment.optJSONObject("url")?.optString("url")
+                                )
+                            )
+                        )
+                    )
             )
         }
+        val homeworkId = asString(
+            firstDefined(
+                item.opt("homework_entry_student_id"),
+                item.opt("homework_id"),
+                item.opt("homeworkId"),
+                item.opt("id")
+            )
+        )
         return JSONObject()
-            .put("id", asString(firstDefined(item.opt("homework_entry_student_id"), item.opt("homework_id"), item.opt("id"))))
+            .put("id", homeworkId)
+            .put("homeworkId", homeworkId)
+            .put("homeworkEntryId", asString(item.opt("homework_entry_id")))
             .put("subjectId", asString(firstDefined(item.opt("subject_id"), item.opt("subjectId"))))
             .put("subjectName", asString(firstDefined(item.opt("subject_name"), item.opt("subjectName"), "—")))
             .put("description", asString(firstDefined(item.opt("description"), item.opt("homework"), item.opt("text"))))
@@ -605,6 +671,11 @@ object MeshCore {
         val numberRe = Regex("(\\d+)")
         fun push(item: JSONObject?, dayIso: String?) {
             if (item == null) return
+            fun text(value: Any?): String = when (value) {
+                is String -> value.trim()
+                is Number -> asString(value)
+                else -> ""
+            }
             val lessonObj = item.optJSONObject("lesson")
             val type = item.optString("type").uppercase(Locale.US)
             val begin = asString(
@@ -626,6 +697,13 @@ object MeshCore {
                     item.optJSONObject("subject")?.optString("name")
                 )
             )
+            val subjectId = asString(
+                firstDefined(
+                    lessonObj?.opt("subject_id"), lessonObj?.opt("subjectId"),
+                    item.opt("subject_id"), item.opt("subjectId"),
+                    item.optJSONObject("subject")?.optString("id")
+                )
+            )
             // МЭШ отдаёт в activities ещё и перемены: type=BREAK, info="Перемена".
             if (type in setOf("BREAK", "WINDOW", "EMPTY", "LUNCH")) return
             if (subject.isBlank() || subject == "—" || subject == "-") return
@@ -641,18 +719,60 @@ object MeshCore {
                     teacherObj?.optString("middle_name")
                 ).joinToString(" ").trim().takeIf { it.isNotBlank() }
             )
-            val room = firstDefined(
-                item.opt("room_name"), item.opt("room"), item.opt("cabinet"),
-                lessonObj?.opt("room_name"), item.optJSONObject("room")?.optString("name")
+            val lessonRoom = lessonObj?.optJSONObject("room")
+            val itemRoom = item.optJSONObject("room")
+                ?: item.optJSONObject("cabinet")
+                ?: item.optJSONObject("auditorium")
+            val roomNumber = asString(
+                firstDefined(
+                    text(item.opt("room_number")), text(item.opt("roomNumber")),
+                    text(item.opt("cabinet_number")), text(item.opt("cabinetNumber")),
+                    text(item.opt("auditorium_number")), text(item.opt("office_number")),
+                    text(lessonObj?.opt("room_number")),
+                    text(lessonRoom?.opt("number")), text(lessonRoom?.opt("num")),
+                    text(itemRoom?.opt("number")), text(itemRoom?.opt("num")),
+                    text(itemRoom?.opt("cabinet_number"))
+                )
             )
+            val roomName = asString(
+                firstDefined(
+                    text(item.opt("room_name")), text(item.opt("roomName")),
+                    text(item.opt("cabinet_name")), text(item.opt("cabinet")),
+                    text(item.opt("room")),
+                    text(lessonObj?.opt("room_name")), text(lessonObj?.opt("roomName")),
+                    text(lessonObj?.opt("room")),
+                    text(itemRoom?.opt("name")), text(itemRoom?.opt("title")),
+                    text(lessonRoom?.opt("name")), text(lessonRoom?.opt("title"))
+                )
+            )
+            val room = if (roomNumber.isNotBlank()) {
+                val clean = roomNumber.trim()
+                when {
+                    clean.startsWith("каб", true) || clean.contains("зал", true) ||
+                        clean.contains("спорт", true) -> clean
+                    else -> "каб. $clean"
+                }
+            } else {
+                roomName
+            }
             val mark = firstDefined(
                 lessonObj?.opt("mark"),
                 item.opt("mark"), item.opt("mark_value"),
                 lessonObj?.optJSONArray("marks")?.optJSONObject(0)?.opt("value")
             )
-            val homework = firstDefined(
-                lessonObj?.opt("homework"),
-                item.opt("homework"), item.opt("home_task"), item.opt("description")
+            val homework = asString(
+                firstDefined(
+                    text(lessonObj?.opt("homework")),
+                    text(item.opt("homework")), text(item.opt("home_task")), text(item.opt("description"))
+                )
+            )
+            val homeworkId = asString(
+                firstDefined(
+                    lessonObj?.opt("homework_entry_student_id"),
+                    lessonObj?.opt("homework_entry_id"), lessonObj?.opt("homework_id"),
+                    item.opt("homework_entry_student_id"),
+                    item.opt("homework_entry_id"), item.opt("homework_id")
+                )
             )
             val number = asNullableInt(
                 firstDefined(
@@ -667,10 +787,12 @@ object MeshCore {
                     .put("number", number ?: JSONObject.NULL)
                     .put("begin", if (begin.isBlank()) JSONObject.NULL else begin.take(5))
                     .put("end", if (end.isBlank()) JSONObject.NULL else end.take(5))
+                    .put("subjectId", subjectId)
                     .put("subject", subject)
                     .put("teacher", asString(teacher))
-                    .put("room", asString(room))
-                    .put("homework", asString(homework))
+                    .put("room", room)
+                    .put("homework", homework)
+                    .put("homeworkId", homeworkId)
                     .put("mark", asNullableDouble(mark) ?: JSONObject.NULL)
                     .put("isCancelled", asBool(firstDefined(lessonObj?.opt("is_cancelled"), item.opt("is_cancel"), item.opt("isCancelled"))))
             )

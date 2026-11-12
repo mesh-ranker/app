@@ -20,6 +20,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
+/** Цель перехода из расписания в конкретное ДЗ. */
+data class HomeworkTarget(
+    val date: String,
+    val subjectId: String = "",
+    val subjectName: String = "",
+    val text: String = ""
+)
+
 /** 5.0 → «5», 4.50 → «4.5», 4.37 → «4.37». */
 fun formatMark(value: Double?): String {
     if (value == null || value.isNaN() || value.isInfinite()) return "—"

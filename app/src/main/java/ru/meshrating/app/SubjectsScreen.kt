@@ -1,5 +1,6 @@
 package ru.meshrating.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,7 +17,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun SubjectsScreen(store: SessionStore, client: MeshClient, personId: String?) {
+fun SubjectsScreen(
+    store: SessionStore,
+    client: MeshClient,
+    personId: String?,
+    onOpenSubject: (String, String) -> Unit = { _, _ -> }
+) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(personId != null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -74,7 +80,20 @@ fun SubjectsScreen(store: SessionStore, client: MeshClient, personId: String?) {
                 items(subjects) { s ->
                     val average = if (s.isNull("average")) null else s.optDouble("average")
                     val place = if (s.isNull("place")) null else s.optInt("place")
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                    val subjectId = s.optString("id")
+                    val subjectName = s.optString("name")
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp)
+                            .then(
+                                if (subjectId.isNotBlank()) {
+                                    Modifier.clickable { onOpenSubject(subjectId, subjectName) }
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically

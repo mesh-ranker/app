@@ -1,25 +1,43 @@
 package ru.meshrating.app
 
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.Locale
 
 @Composable
-fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?) {
+fun HomeworksScreen(
+    store: SessionStore,
+    client: MeshClient,
+    studentId: String?,
+    target: HomeworkTarget? = null,
+    onTargetConsumed: () -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
+    val listState = rememberLazyListState()
     var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var homeworks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
@@ -27,6 +45,8 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
     // due — домашнее задание к уроку выбранного дня (как в дневнике);
     // assigned — по дате, когда его задали.
     var mode by remember { mutableStateOf("due") }
+    var focusIndex by remember { mutableStateOf<Int?>(null) }
+    var launchingMaterialId by remember { mutableStateOf<String?>(null) }
     val from = MeshCore.addDays(selectedDate, -45)
     val to = MeshCore.addDays(selectedDate, 45)
 
@@ -48,7 +68,62 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
         }
     }
 
+    fun openMaterial(homeworkEntryId: String, material: JSONObject) {
+        val directUrl = material.optString("url").trim()
+        if (directUrl.isNotBlank()) {
+            openUrl(uriHandler, directUrl, context)
+            return
+        }
+        val materialId = material.optString("materialId")
+            .ifBlank { material.optString("uuid") }
+            .trim()
+        if (homeworkEntryId.isBlank() || materialId.isBlank()) return
+        launchingMaterialId = materialId
+        scope.launch {
+            try {
+                val url = withContext(Dispatchers.IO) {
+                    client.launchHomeworkMaterial(homeworkEntryId, materialId)
+                }
+                openUrl(uriHandler, url, context)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Toast.makeText(context, MeshCore.describeError(e), Toast.LENGTH_LONG).show()
+            } finally {
+                launchingMaterialId = null
+            }
+        }
+    }
+
     LaunchedEffect(studentId, selectedDate) { load() }
+
+    LaunchedEffect(target) {
+        val destination = target ?: return@LaunchedEffect
+        if (mode != "due") mode = "due"
+        if (selectedDate != destination.date) selectedDate = destination.date
+    }
+
+    val filtered = remember(homeworks, mode, selectedDate) {
+        homeworks
+            .filter { h ->
+                val day = if (mode == "assigned") h.optString("assignedOn") else h.optString("dueDate")
+                day == selectedDate
+            }
+            .sortedWith(compareBy({ it.optString("subjectName") }, { it.optString("dueDate") }))
+    }
+
+    LaunchedEffect(target, selectedDate, loading, filtered) {
+        val destination = target ?: return@LaunchedEffect
+        if (loading || selectedDate != destination.date) return@LaunchedEffect
+        val index = findHomeworkIndex(filtered, destination)
+        if (index >= 0) {
+            listState.animateScrollToItem(index)
+            focusIndex = index
+            delay(1_000)
+            focusIndex = null
+        }
+        onTargetConsumed()
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text("Домашние задания", style = MaterialTheme.typography.headlineMedium)
@@ -92,22 +167,23 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
                     Button(onClick = { load() }) { Text("Повторить") }
                 }
             }
+            filtered.isEmpty() -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(if (mode == "due") "На этот день домашнего задания нет" else "В этот день ничего не задавали")
+                }
+            }
             else -> {
-                val filtered = homeworks
-                    .filter { h ->
-                        val day = if (mode == "assigned") h.optString("assignedOn") else h.optString("dueDate")
-                        day == selectedDate
-                    }
-                    .sortedWith(compareBy({ it.optString("subjectName") }, { it.optString("dueDate") }))
-                if (filtered.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(if (mode == "due") "На этот день домашнего задания нет" else "В этот день ничего не задавали")
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.weight(1f)) {
-                        items(filtered) { h ->
-                            HomeworkCard(h, uriHandler)
-                        }
+                LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+                    itemsIndexed(filtered) { index, h ->
+                        HomeworkCard(
+                            h = h,
+                            uriHandler = uriHandler,
+                            context = context,
+                            highlighted = focusIndex == index,
+                            dimmed = focusIndex != null && focusIndex != index,
+                            launchingMaterialId = launchingMaterialId,
+                            onOpenMaterial = ::openMaterial
+                        )
                     }
                 }
             }
@@ -116,14 +192,37 @@ fun HomeworksScreen(store: SessionStore, client: MeshClient, studentId: String?)
 }
 
 @Composable
-private fun HomeworkCard(h: JSONObject, uriHandler: androidx.compose.ui.platform.UriHandler) {
+private fun HomeworkCard(
+    h: JSONObject,
+    uriHandler: UriHandler,
+    context: Context,
+    highlighted: Boolean,
+    dimmed: Boolean,
+    launchingMaterialId: String?,
+    onOpenMaterial: (String, JSONObject) -> Unit
+) {
     val description = h.optString("description").trim().let { if (it == ".") "" else it }
     val assigned = h.optString("assignedOn").takeIf { it.isNotBlank() && it != "null" }
     val due = h.optString("dueDate").takeIf { it.isNotBlank() && it != "null" }
     val materials = h.optJSONArray("materials")
     val attachments = h.optJSONArray("attachments")
+    val homeworkEntryId = h.optString("homeworkEntryId").ifBlank { h.optString("id") }
+    val cardAlpha = if (dimmed) 0.45f else 1f
 
-    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .alpha(cardAlpha),
+        colors = CardDefaults.cardColors(
+            containerColor = if (highlighted) {
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        ),
+        border = if (highlighted) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null
+    ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -160,31 +259,55 @@ private fun HomeworkCard(h: JSONObject, uriHandler: androidx.compose.ui.platform
             }
 
             if (materials != null && materials.length() > 0) {
+                val attachmentTypes = setOf("attachment", "attachments", "file", "files")
                 val visible = (0 until materials.length())
                     .mapNotNull { materials.optJSONObject(it) }
-                    .filter { it.optString("type") != "attachments" && it.optString("title").isNotBlank() }
+                    .filter {
+                        it.optString("type").lowercase(Locale.US) !in attachmentTypes &&
+                            (it.optString("title").isNotBlank() || it.optString("typeName").isNotBlank())
+                    }
                 if (visible.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
-                    Text("Материалы и ЦДЗ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "Материалы и ЦДЗ",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                     visible.forEach { material ->
-                        val title = material.optString("title")
-                        val url = material.optString("url")
+                        val title = material.optString("title").ifBlank {
+                            material.optString("typeName").ifBlank { "Материал" }
+                        }
+                        val url = material.optString("url").trim()
+                        val materialId = material.optString("materialId")
+                            .ifBlank { material.optString("uuid") }
+                            .trim()
+                        val canOpen = url.isNotBlank() || materialId.isNotBlank()
                         val kind = listOf(material.optString("typeName"), material.optString("actionName"))
                             .filter { it.isNotBlank() }
                             .joinToString(" · ")
+                        val opening = launchingMaterialId != null && launchingMaterialId == materialId
                         Text(
                             "• $title",
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (url.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = if (url.isNotBlank()) {
-                                Modifier.clickable { uriHandler.openUri(url) }
-                            } else Modifier
+                            color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = if (canOpen) {
+                                Modifier.clickable { onOpenMaterial(homeworkEntryId, material) }
+                            } else {
+                                Modifier
+                            }
                         )
-                        if (kind.isNotBlank()) {
+                        val subline = when {
+                            opening -> "Открываем…"
+                            kind.isNotBlank() && canOpen -> "$kind · нажмите, чтобы открыть"
+                            kind.isNotBlank() -> kind
+                            canOpen -> "Нажмите, чтобы открыть"
+                            else -> ""
+                        }
+                        if (subline.isNotBlank()) {
                             Text(
-                                kind,
+                                subline,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 10.dp)
                             )
                         }
@@ -204,11 +327,58 @@ private fun HomeworkCard(h: JSONObject, uriHandler: androidx.compose.ui.platform
                         style = MaterialTheme.typography.bodySmall,
                         color = if (url.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = if (url.isNotBlank()) {
-                            Modifier.clickable { uriHandler.openUri(url) }
-                        } else Modifier
+                            Modifier.clickable { openUrl(uriHandler, url, context) }
+                        } else {
+                            Modifier
+                        }
                     )
                 }
             }
         }
+    }
+}
+
+private fun findHomeworkIndex(items: List<JSONObject>, target: HomeworkTarget): Int {
+    fun normalize(value: String): String =
+        value.lowercase(Locale.ROOT).replace(Regex("\\s+"), " ").trim()
+
+    val targetText = normalize(target.text)
+    val targetSubjectName = normalize(target.subjectName)
+    val targetSubjectId = target.subjectId.trim()
+    var bestIndex = -1
+    var bestScore = 0
+
+    items.forEachIndexed { index, homework ->
+        val subjectId = homework.optString("subjectId")
+        val subjectName = normalize(homework.optString("subjectName"))
+        val text = normalize(homework.optString("description"))
+        val sameId = targetSubjectId.isNotBlank() && subjectId == targetSubjectId
+        val sameName = targetSubjectName.isNotBlank() &&
+            (subjectName == targetSubjectName ||
+                subjectName.contains(targetSubjectName) ||
+                targetSubjectName.contains(subjectName))
+        val sameText = targetText.isNotBlank() &&
+            (text.contains(targetText) || targetText.contains(text))
+        if (!sameId && !sameName && !sameText) return@forEachIndexed
+
+        val score = when {
+            sameText && (sameId || sameName) -> 4
+            sameText -> 3
+            sameId -> 2
+            sameName -> 1
+            else -> 0
+        }
+        if (score > bestScore) {
+            bestIndex = index
+            bestScore = score
+        }
+    }
+    return bestIndex
+}
+
+private fun openUrl(uriHandler: UriHandler, url: String, context: Context) {
+    if (url.isBlank()) return
+    runCatching { uriHandler.openUri(url) }.onFailure {
+        Toast.makeText(context, "Не удалось открыть ссылку", Toast.LENGTH_SHORT).show()
     }
 }

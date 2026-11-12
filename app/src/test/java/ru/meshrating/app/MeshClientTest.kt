@@ -77,6 +77,10 @@ class MeshClientTest {
 
         val marks = client.getMarks("17234613", "2026-09-01", "2026-10-12")
         assertTrue(marks.size > 10)
+        assertEquals(
+            marks.map { it.getString("date") }.sortedDescending(),
+            marks.map { it.getString("date") }
+        )
         assertTrue(MeshCore.summarizeMarks(marks).getDouble("average") > 2.0)
 
         val homeworks = client.getHomeworks("17234613", "2026-10-05", "2026-10-12")

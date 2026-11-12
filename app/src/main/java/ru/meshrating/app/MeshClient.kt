@@ -213,7 +213,9 @@ class MeshClient(
     fun getMarks(studentId: String?, from: String, to: String): List<JSONObject> {
         val json = request(MeshCore.Paths.MARKS, mapOf("student_id" to studentId, "from" to from, "to" to to))
         val list = MeshCore.payloadList(json)
-        return (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { mark -> MeshCore.normalizeMark(mark) } }
+        return (0 until list.length())
+            .mapNotNull { list.optJSONObject(it)?.let { mark -> MeshCore.normalizeMark(mark) } }
+            .sortedByDescending { it.optString("date") }
     }
 
     fun getSubjectMarks(studentId: String?): JSONArray =
@@ -223,6 +225,79 @@ class MeshClient(
         val json = request(MeshCore.Paths.HOMEWORKS, mapOf("student_id" to studentId, "from" to from, "to" to to))
         val list = MeshCore.payloadList(json)
         return (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { item -> MeshCore.normalizeHomework(item) } }
+    }
+
+    /**
+     * Ссылка запуска цифрового материала ДЗ (тест, «Облако знаний» и т.п.).
+     * МЭШ отдаёт 302 на /api/launcher/v1/launch — этот адрес и открываем в браузере.
+     */
+    fun launchHomeworkMaterial(homeworkEntryId: String?, materialId: String?): String {
+        val entry = homeworkEntryId?.trim().orEmpty()
+        val material = materialId?.trim().orEmpty()
+        if (entry.isBlank() || material.isBlank()) {
+            throw MeshCore.MeshError("Не указан материал домашнего задания", "bad-material")
+        }
+        val url = buildUrl(
+            MeshCore.Paths.HOMEWORK_LAUNCH,
+            mapOf("homework_entry_id" to entry, "material_id" to material)
+        )
+        var attempt = 0
+        while (attempt < 2) {
+            attempt++
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = timeoutMs
+                readTimeout = timeoutMs
+                instanceFollowRedirects = false
+                headers().forEach { (key, value) -> setRequestProperty(key, value) }
+            }
+            requestCount++
+            val status: Int
+            val location: String?
+            val body: String
+            try {
+                status = connection.responseCode
+                location = connection.getHeaderField("Location")
+                val stream = when {
+                    status in 200..299 -> connection.inputStream
+                    status >= 400 -> connection.errorStream
+                    else -> null
+                }
+                body = stream?.let { BufferedReader(InputStreamReader(it, Charsets.UTF_8)).readText() } ?: ""
+            } catch (error: SocketTimeoutException) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Таймаут запроса к МЭШ", "timeout", 0, error)
+            } catch (error: UnknownHostException) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Нет связи с school.mos.ru", "network", 0, error)
+            } catch (error: Exception) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Ошибка сети: ${error.message}", "network", 0, error)
+            } finally {
+                connection.disconnect()
+            }
+
+            if (status == 401 && attempt < 2) {
+                if (refreshToken() != null) continue
+                throw MeshCore.MeshError("Токен истёк, обновить не удалось", "unauthorized", 401)
+            }
+            if (status == 401) throw MeshCore.MeshError("Не авторизован (401)", "unauthorized", 401)
+            if (status == 403) throw MeshCore.MeshError("Доступ запрещён (403)", "forbidden", 403)
+            if (status !in 200..399) {
+                throw MeshCore.MeshError("Не удалось открыть материал (HTTP $status)", "http-$status", status)
+            }
+
+            location?.takeIf { it.isNotBlank() }?.let { return MeshCore.absoluteUrl(it) }
+            val text = body.trim().trim('"')
+            if (text.startsWith("http://") || text.startsWith("https://")) return text
+            runCatching { JSONObject(text) }.getOrNull()?.let { json ->
+                listOf("url", "link", "location", "redirect", "activity_url").forEach { key ->
+                    json.optString(key).takeIf { it.isNotBlank() }?.let { return MeshCore.absoluteUrl(it) }
+                }
+            }
+            throw MeshCore.MeshError("МЭШ не вернул ссылку на материал", "invalid-json", status)
+        }
+        throw MeshCore.MeshError("Не удалось открыть материал", "exhausted")
     }
 
     fun getSchedule(studentId: String?, date: String = MeshCore.today()): JSONArray =

@@ -34,6 +34,7 @@ fun MarksScreen(store: SessionStore, client: MeshClient, studentId: String?) {
         scope.launch {
             try {
                 marks = withContext(Dispatchers.IO) { client.getMarks(studentId, from, to) }
+                    .sortedByDescending { it.optString("date") }
             } catch (e: Exception) {
                 error = MeshCore.describeError(e)
             } finally {

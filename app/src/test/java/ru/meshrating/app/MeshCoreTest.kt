@@ -132,11 +132,13 @@ class MeshCoreTest {
     fun `нормализация домашки и расписания`() {
         val homework = MeshCore.normalizeHomework(
             JSONObject(
-                """{"homework_entry_student_id": "h1", "subject_name": "История", "description": "Параграф 12",
+                """{"homework_entry_student_id": "h1", "homework_entry_id": 42,
+                    "subject_name": "История", "description": "Параграф 12",
                     "date_assigned_on": "2026-10-06", "is_done": true}"""
             )
         )
         assertEquals("h1", homework.getString("id"))
+        assertEquals("42", homework.getString("homeworkEntryId"))
         assertTrue(homework.getBoolean("isDone"))
 
         val lessons = MeshCore.normalizeSchedule(
@@ -153,6 +155,70 @@ class MeshCoreTest {
         assertEquals("08:30", lessons.getJSONObject(0).getString("begin"))
         assertEquals("Геометрия", lessons.getJSONObject(1).getString("subject"))
         assertEquals("2026-10-12", lessons.getJSONObject(2).getString("date"))
+    }
+
+    @Test
+    fun `материалы ДЗ сохраняют uuid и достают ссылки`() {
+        val homework = MeshCore.normalizeHomework(
+            JSONObject(
+                """{
+                  "homework_entry_student_id": 100,
+                  "homework_entry_id": 200,
+                  "subject_id": 7,
+                  "subject_name": "Физика",
+                  "date_prepared_for": "2026-11-12T00:00:00",
+                  "materials": [
+                    {"type": "test_spec_binding", "type_name": "Тест", "title": "Тест по физике",
+                     "action_id": 1, "action_name": "Пройти", "uuid": "test-uuid", "urls": []},
+                    {"type": "fizikon_module", "type_name": "Облако знаний", "title": "Облако",
+                     "action_id": 1, "action_name": "Пройти", "uuid": "cloud-uuid", "urls": []},
+                    {"type": "attachments", "type_name": "Прочее", "title": "task.pdf", "id": 99,
+                     "urls": [{"url": "/ej/attachments/files/task.pdf"}]}
+                  ]
+                }"""
+            )
+        )
+        assertEquals("2026-11-12", homework.getString("dueDate"))
+        assertEquals("200", homework.getString("homeworkEntryId"))
+        val materials = homework.getJSONArray("materials")
+        assertEquals(3, materials.length())
+        assertEquals("test-uuid", materials.getJSONObject(0).getString("materialId"))
+        assertEquals("cloud-uuid", materials.getJSONObject(1).getString("materialId"))
+        assertEquals(
+            "https://school.mos.ru/ej/attachments/files/task.pdf",
+            materials.getJSONObject(2).getString("url")
+        )
+        val attachments = homework.getJSONArray("attachments")
+        assertEquals(1, attachments.length())
+        assertEquals(
+            "https://school.mos.ru/ej/attachments/files/task.pdf",
+            attachments.getJSONObject(0).getString("url")
+        )
+    }
+
+    @Test
+    fun `расписание показывает номер кабинета и id для перехода к ДЗ`() {
+        val lessons = MeshCore.normalizeSchedule(
+            JSONObject(
+                """{"activities": [
+                  {"type": "LESSON", "begin_time": "09:00", "end_time": "09:40",
+                   "room_number": "412", "room_name": "Кабинет физики",
+                   "lesson": {"subject_id": 33623584, "subject_name": "Физика",
+                              "homework": "§ 6 - 16", "homework_entry_id": 354987379}},
+                  {"type": "LESSON", "begin_time": "10:00", "end_time": "10:40",
+                   "room_name": "Кабинет истории",
+                   "lesson": {"subject_id": 33623645, "subject_name": "История"}}
+                ]}"""
+            ),
+            "2026-11-12"
+        )
+        assertEquals(2, lessons.length())
+        val physics = lessons.getJSONObject(0)
+        assertEquals("09:40", physics.getString("end"))
+        assertEquals("каб. 412", physics.getString("room"))
+        assertEquals("33623584", physics.getString("subjectId"))
+        assertEquals("354987379", physics.getString("homeworkId"))
+        assertEquals("Кабинет истории", lessons.getJSONObject(1).getString("room"))
     }
 
     @Test

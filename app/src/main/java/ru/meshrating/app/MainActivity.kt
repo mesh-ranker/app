@@ -242,6 +242,8 @@ fun MainScaffold(
     onLogout: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf("ranking") }
+    var rankingSubjectId by remember { mutableStateOf<String?>(null) }
+    var homeworkTarget by remember { mutableStateOf<HomeworkTarget?>(null) }
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -249,7 +251,11 @@ fun MainScaffold(
                 items.forEach { (key, label) ->
                     NavigationBarItem(
                         selected = currentTab == key,
-                        onClick = { currentTab = key },
+                        onClick = {
+                            currentTab = key
+                            if (key == "ranking") rankingSubjectId = null
+                            if (key != "homeworks") homeworkTarget = null
+                        },
                         label = { Text(label) },
                         icon = { }
                     )
@@ -259,11 +265,42 @@ fun MainScaffold(
     ) { padding ->
         Box(modifier = Modifier.padding(padding)) {
             when (currentTab) {
-                "ranking" -> RankingScreen(store, client, personId, onLogout)
-                "subjects" -> SubjectsScreen(store, client, personId)
+                "ranking" -> RankingScreen(
+                    store,
+                    client,
+                    personId,
+                    onLogout,
+                    selectedSubjectId = rankingSubjectId,
+                    onSubjectChange = { rankingSubjectId = it }
+                )
+                "subjects" -> SubjectsScreen(
+                    store,
+                    client,
+                    personId,
+                    onOpenSubject = { id, _ ->
+                        if (id.isNotBlank()) {
+                            rankingSubjectId = id
+                            currentTab = "ranking"
+                        }
+                    }
+                )
                 "marks" -> MarksScreen(store, client, studentId)
-                "homeworks" -> HomeworksScreen(store, client, studentId)
-                "schedule" -> ScheduleScreen(store, client, studentId)
+                "homeworks" -> HomeworksScreen(
+                    store,
+                    client,
+                    studentId,
+                    target = homeworkTarget,
+                    onTargetConsumed = { homeworkTarget = null }
+                )
+                "schedule" -> ScheduleScreen(
+                    store,
+                    client,
+                    studentId,
+                    onHomeworkClick = {
+                        homeworkTarget = it
+                        currentTab = "homeworks"
+                    }
+                )
                 "profile" -> ProfileScreen(store, client, profile, onLogout)
                 "settings" -> SettingsScreen(store, client, profile, onLogout)
             }

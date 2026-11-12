@@ -1,5 +1,6 @@
 package ru.meshrating.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,7 +17,12 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun ScheduleScreen(store: SessionStore, client: MeshClient, studentId: String?) {
+fun ScheduleScreen(
+    store: SessionStore,
+    client: MeshClient,
+    studentId: String?,
+    onHomeworkClick: (HomeworkTarget) -> Unit = {}
+) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -82,7 +88,6 @@ fun ScheduleScreen(store: SessionStore, client: MeshClient, studentId: String?) 
                 items(lessons.filter { it.optString("subject").let { s -> s.isNotBlank() && s != "—" } }) { lesson ->
                     val begin = lesson.optString("begin").takeIf { it.isNotBlank() && it != "null" }
                     val end = lesson.optString("end").takeIf { it.isNotBlank() && it != "null" }
-                    val time = if (begin != null) "$begin${if (end != null) "–$end" else ""}" else "—"
                     val number = if (lesson.isNull("number")) null else lesson.optInt("number")
                     val mark = if (lesson.isNull("mark")) null else lesson.optDouble("mark")
                     val teacher = lesson.optString("teacher")
@@ -95,7 +100,14 @@ fun ScheduleScreen(store: SessionStore, client: MeshClient, studentId: String?) 
                             verticalAlignment = Alignment.Top
                         ) {
                             Column(modifier = Modifier.width(70.dp)) {
-                                Text(time, fontWeight = FontWeight.Bold)
+                                Text(begin ?: "—", fontWeight = FontWeight.Bold)
+                                if (end != null) {
+                                    Text(
+                                        end,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                                 if (number != null) {
                                     Text(
                                         "$number урок",
@@ -127,8 +139,19 @@ fun ScheduleScreen(store: SessionStore, client: MeshClient, studentId: String?) 
                                     Text(
                                         "ДЗ: $homework",
                                         style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary,
                                         maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.clickable {
+                                            onHomeworkClick(
+                                                HomeworkTarget(
+                                                    date = lesson.optString("date").ifBlank { selectedDate },
+                                                    subjectId = lesson.optString("subjectId"),
+                                                    subjectName = lesson.optString("subject"),
+                                                    text = homework
+                                                )
+                                            )
+                                        }
                                     )
                                 }
                             }
