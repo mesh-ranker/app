@@ -23,7 +23,7 @@ data class UpdateInfo(
  */
 object UpdateChecker {
 
-    const val CHECK_INTERVAL_MS = 60L * 60L * 1000L
+    const val CHECK_INTERVAL_MS = 15L * 60L * 1000L
 
     private const val LATEST_RELEASE_API = "https://api.github.com/repos/mesh-ranker/app/releases/latest"
     private const val RELEASES_PAGE = "https://github.com/mesh-ranker/app/releases"

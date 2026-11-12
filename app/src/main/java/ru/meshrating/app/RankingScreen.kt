@@ -33,6 +33,10 @@ fun RankingScreen(
     var period by remember { mutableStateOf("year") }
     var board by remember { mutableStateOf<JSONObject?>(null) }
     val date = MeshCore.today()
+    // Месячный рейтинг МЭШ отдаёт только для общего рейтинга класса.
+    // У конкретного предмета 30-дневных полей нет, поэтому переключатель скрыт.
+    val isGeneral = selectedSubject == "all"
+    val monthlyMode = isGeneral && period == "month"
 
     fun load(monthlyMode: Boolean) {
         if (personId.isNullOrBlank()) {
@@ -65,22 +69,24 @@ fun RankingScreen(
         }
     }
 
-    LaunchedEffect(personId, date, selectedSubject, period) { load(period == "month") }
+    LaunchedEffect(personId, date, selectedSubject, period) { load(monthlyMode) }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(
-                selected = period == "year",
-                onClick = { period = "year" },
-                label = { Text("Год") }
-            )
-            FilterChip(
-                selected = period == "month",
-                onClick = { period = "month" },
-                label = { Text("Месяц") }
-            )
+        if (isGeneral) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(
+                    selected = period == "year",
+                    onClick = { period = "year" },
+                    label = { Text("Год") }
+                )
+                FilterChip(
+                    selected = period == "month",
+                    onClick = { period = "month" },
+                    label = { Text("Месяц") }
+                )
+            }
+            Spacer(Modifier.height(6.dp))
         }
-        Spacer(Modifier.height(6.dp))
 
         board?.optJSONObject("summary")?.let { s ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -116,7 +122,7 @@ fun RankingScreen(
             }
             items(subjects) { s ->
                 val subjectAverage = when {
-                    period == "month" && !s.isNull("average30") -> s.optDouble("average30")
+                    monthlyMode && !s.isNull("average30") -> s.optDouble("average30")
                     !s.isNull("average") -> s.optDouble("average")
                     else -> null
                 }
@@ -151,7 +157,7 @@ fun RankingScreen(
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { load(period == "month") }) { Text("Повторить") }
+                    Button(onClick = { load(monthlyMode) }) { Text("Повторить") }
                 }
             }
             else -> {

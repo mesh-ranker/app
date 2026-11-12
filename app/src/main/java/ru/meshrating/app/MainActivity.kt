@@ -123,7 +123,7 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
         loginError = null
     }
 
-    // Проверка обновлений на GitHub Releases: не чаще одного раза в час.
+    // Проверка обновлений на GitHub Releases: не чаще одного раза в 15 минут.
     LaunchedEffect(Unit) {
         val now = System.currentTimeMillis()
         if (now - store.lastUpdateCheck < UpdateChecker.CHECK_INTERVAL_MS) return@LaunchedEffect
@@ -380,17 +380,22 @@ fun MainScaffold(
         bottomBar = {
             NavigationBar {
                 val items = listOf(
-                    "ranking" to "Рейтинг",
-                    "marks" to "Оценки",
-                    "homeworks" to "ДЗ",
-                    "schedule" to "Расписание"
+                    Triple("ranking", "Рейтинг", R.drawable.ic_nav_ranking),
+                    Triple("marks", "Оценки", R.drawable.ic_nav_marks),
+                    Triple("homeworks", "ДЗ", R.drawable.ic_nav_homeworks),
+                    Triple("schedule", "Расписание", R.drawable.ic_nav_schedule)
                 )
-                items.forEach { (key, label) ->
+                items.forEach { (key, label, iconRes) ->
                     NavigationBarItem(
                         selected = currentTab == key,
                         onClick = { navigateTo(NavState(tab = key)) },
                         label = { Text(label) },
-                        icon = { }
+                        icon = {
+                            Icon(
+                                painter = painterResource(iconRes),
+                                contentDescription = label
+                            )
+                        }
                     )
                 }
             }

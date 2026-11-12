@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Мини-пьедестал: 3 место (маленькая), 1 место (большая), 2 место (средняя). -->
+    <path
+        android:fillColor="#E8EDF7"
+        android:pathData="M2,13h5v7h-5z" />
+    <path
+        android:fillColor="#E8EDF7"
+        android:pathData="M9,5h6v15h-6z" />
+    <path
+        android:fillColor="#E8EDF7"
+        android:pathData="M17,9h5v11h-5z" />
+</vector>
