@@ -13,6 +13,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -81,12 +82,26 @@ fun DaySelector(
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(MeshCore.dateRu(date, weekday = true), style = MaterialTheme.typography.titleMedium)
-            if (date == MeshCore.today()) {
-                Text("Сегодня", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            val relative = remember(date) { relativeDayLabel(date) }
+            if (relative != null) {
+                Text(relative, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
         }
         IconButton(onClick = onNext) {
             Text("›", style = MaterialTheme.typography.headlineMedium)
         }
+    }
+}
+
+/** Подпись относительного дня: «Сегодня», «Завтра», «Послезавтра» и т.п. (±2 дня), иначе null. */
+private fun relativeDayLabel(date: String): String? {
+    val today = MeshCore.today()
+    return when (date) {
+        today -> "Сегодня"
+        MeshCore.addDays(today, 1) -> "Завтра"
+        MeshCore.addDays(today, -1) -> "Вчера"
+        MeshCore.addDays(today, 2) -> "Послезавтра"
+        MeshCore.addDays(today, -2) -> "Позавчера"
+        else -> null
     }
 }

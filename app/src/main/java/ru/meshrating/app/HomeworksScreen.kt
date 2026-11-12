@@ -4,8 +4,6 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -160,11 +158,6 @@ fun HomeworksScreen(
             date = selectedDate,
             onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
             onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
-        )
-        RelativeDayChips(
-            today = MeshCore.today(),
-            selectedDate = selectedDate,
-            onSelect = { selectedDate = it }
         )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
@@ -394,40 +387,6 @@ private fun HomeworkCard(
                     )
                 }
             }
-        }
-    }
-}
-
-private data class RelativeDay(val offset: Int, val label: String)
-
-private val RELATIVE_DAYS = listOf(
-    RelativeDay(-2, "Позавчера"),
-    RelativeDay(-1, "Вчера"),
-    RelativeDay(0, "Сегодня"),
-    RelativeDay(1, "Завтра"),
-    RelativeDay(2, "Послезавтра")
-)
-
-/** Быстрые кнопки «Позавчера … Послезавтра»; выбранный день подсвечивается. */
-@Composable
-private fun RelativeDayChips(
-    today: String,
-    selectedDate: String,
-    onSelect: (String) -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        RELATIVE_DAYS.forEach { day ->
-            val date = MeshCore.addDays(today, day.offset)
-            FilterChip(
-                selected = selectedDate == date,
-                onClick = { onSelect(date) },
-                label = { Text(day.label) }
-            )
         }
     }
 }
