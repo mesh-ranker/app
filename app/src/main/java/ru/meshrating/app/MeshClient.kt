@@ -166,7 +166,7 @@ class MeshClient(
     }
 
     fun fetchProfile(): JSONObject {
-        val json = request(MeshCore.Paths.PROFILE, retryOn401 = false)
+        val json = request(MeshCore.Paths.PROFILE)
             ?: throw MeshCore.MeshError("Пустой ответ профиля", "invalid-json")
         return MeshCore.normalizeProfile(json)
     }
@@ -232,29 +232,49 @@ class MeshClient(
     fun getName(personId: String?): String {
         val key = personId?.trim().orEmpty()
         if (key.isEmpty()) return "Неизвестный ученик"
-        nameCache[key]?.let { return it }
+        synchronized(nameCache) {
+            nameCache[key]?.takeIf { it.isNotBlank() }?.let { return it }
+        }
         val name = try {
             val json = request(MeshCore.Paths.PROFILE_BY_ID, mapOf("personId" to key))
                 ?: throw MeshCore.MeshError("Пустой профиль", "invalid-json")
-            MeshCore.personName(
-                MeshCore.asString(MeshCore.firstDefined(json.opt("lastName"), json.opt("last_name"))),
-                MeshCore.asString(MeshCore.firstDefined(json.opt("firstName"), json.opt("first_name"))),
-                MeshCore.asString(MeshCore.firstDefined(json.opt("middleName"), json.opt("middle_name")))
-            ).ifBlank { "Ученик ${key.take(8)}" }
+            val first = MeshCore.asString(MeshCore.firstDefined(json.opt("firstName"), json.opt("first_name")))
+            val last = MeshCore.asString(MeshCore.firstDefined(json.opt("lastName"), json.opt("last_name")))
+            // Как в веб-версии: «Даниил Б», а не «Б Даниил».
+            listOf(first, last)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+                .ifBlank {
+                    MeshCore.asString(MeshCore.firstDefined(json.opt("name"), json.opt("fio")))
+                }
         } catch (error: Exception) {
-            "Ученик ${key.take(8)}"
+            ""
         }
-        nameCache[key] = name
+        // Ошибки и заглушки не кэшируем: иначе имя навсегда останется битым.
+        if (name.isBlank()) return "Без имени"
+        synchronized(nameCache) { nameCache[key] = name }
         onName?.invoke(key, name)
         return name
     }
 
     fun getNames(personIds: List<String>): Map<String, String> {
-        val result = linkedMapOf<String, String>()
-        personIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct().forEach { id ->
-            result[id] = getName(id)
+        val ids = personIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        val result = java.util.Collections.synchronizedMap(linkedMapOf<String, String>())
+        if (ids.isEmpty()) return result
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(minOf(6, ids.size))
+        try {
+            ids.forEach { id ->
+                pool.execute {
+                    val name = getName(id)
+                    synchronized(result) { result[id] = name }
+                }
+            }
+        } finally {
+            pool.shutdown()
         }
-        return result
+        pool.awaitTermination(2, java.util.concurrent.TimeUnit.MINUTES)
+        return LinkedHashMap(result)
     }
 
     /** Полная таблица рейтинга с именами и сводкой — то, что показывает вкладка «Рейтинг». */
@@ -268,8 +288,13 @@ class MeshClient(
         val members = getRank(personId, date, subjectId)
         val ids = (0 until members.length())
             .mapNotNull { members.optJSONObject(it)?.optString("personId")?.takeIf { id -> id.isNotBlank() } }
-        val resolved = LinkedHashMap(names)
-        val missing = ids.filter { !resolved.containsKey(it) }
+        val resolved = LinkedHashMap<String, String>()
+        synchronized(nameCache) { resolved.putAll(nameCache) }
+        resolved.putAll(names)
+        val missing = ids.filter { id ->
+            val cached = resolved[id]
+            cached.isNullOrBlank() || cached.startsWith("Ученик ") || cached == "Без имени"
+        }
         if (missing.isNotEmpty()) {
             getNames(missing).forEach { (id, name) -> resolved[id] = name }
         }

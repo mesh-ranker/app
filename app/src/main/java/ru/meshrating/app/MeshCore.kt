@@ -354,15 +354,32 @@ object MeshCore {
         val first = asString(firstDefined(child.opt("first_name"), child.opt("firstName")))
         val middle = asString(firstDefined(child.opt("middle_name"), child.opt("middleName")))
         val name = personName(last, first, middle).ifBlank { asString(firstDefined(child.opt("name"), "Ученик")) }
+        val school = child.optJSONObject("school")
+        val schoolName = asString(
+            firstDefined(
+                child.opt("school_name"),
+                child.opt("schoolName"),
+                school?.optString("name"),
+                school?.optString("short_name")
+            )
+        )
+        val schoolShort = asString(
+            firstDefined(
+                school?.optString("short_name"),
+                child.opt("school_short_name"),
+                schoolName
+            )
+        )
         return JSONObject()
             .put("id", asString(firstDefined(child.opt("id"), child.opt("user_id"), child.opt("student_id"))))
             .put("personId", asString(firstDefined(child.opt("contingent_guid"), child.opt("person_id"), child.opt("personId"))))
             .put("name", name)
             .put("shortName", first.ifBlank { name })
-            .put("classId", asString(firstDefined(child.opt("class_id"), child.opt("classId"))))
+            .put("classId", asString(firstDefined(child.opt("class_id"), child.opt("classId"), child.opt("class_unit_id"))))
             .put("className", asString(firstDefined(child.opt("class_name"), child.opt("className"))))
-            .put("schoolId", asString(firstDefined(child.opt("school_id"), child.opt("schoolId"))))
-            .put("schoolName", asString(firstDefined(child.opt("school_name"), child.opt("schoolName"), child.optJSONObject("school")?.optString("name"))))
+            .put("schoolId", asString(firstDefined(child.opt("school_id"), child.opt("schoolId"), school?.opt("id"))))
+            .put("schoolName", schoolName)
+            .put("schoolShort", schoolShort)
             .put("avatarUrl", asString(firstDefined(child.opt("avatar_url"), child.opt("avatarUrl"))))
     }
 
@@ -441,7 +458,7 @@ object MeshCore {
                     .put("previousAverage", previousAverage ?: JSONObject.NULL)
                     .put("placeDelta", placeDelta ?: JSONObject.NULL)
                     .put("averageDelta", averageDelta ?: JSONObject.NULL)
-                    .put("name", names[personId] ?: if (personId.isBlank()) "Неизвестный ученик" else "Ученик ${personId.take(8)}")
+                    .put("name", names[personId] ?: "Без имени")
                     .put("isMe", !meId.isNullOrBlank() && personId == meId)
                     .put("color", gradeColor(average))
                     .put("trendDirection", trend)
@@ -521,78 +538,162 @@ object MeshCore {
         .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
 
     fun normalizeHomework(item: JSONObject): JSONObject {
-        val due = asString(firstDefined(item.opt("date_prepared_for"), item.opt("date_prepared"), item.opt("deadline"), item.opt("due_date")))
+        val due = asString(
+            firstDefined(
+                item.opt("date_prepared_for"),
+                item.opt("date_prepared"),
+                item.opt("deadline"),
+                item.opt("due_date")
+            )
+        )
+        val assigned = asString(
+            firstDefined(item.opt("date_assigned_on"), item.opt("date_assigned"), item.opt("date"))
+        )
+        val rawMaterials = item.optJSONArray("materials") ?: JSONArray()
+        val materials = JSONArray()
+        val attachments = JSONArray()
+        for (i in 0 until rawMaterials.length()) {
+            val material = rawMaterials.optJSONObject(i) ?: continue
+            val urls = material.optJSONArray("urls") ?: JSONArray()
+            val type = material.optString("type")
+            materials.put(
+                JSONObject()
+                    .put("type", type)
+                    .put("typeName", material.optString("type_name"))
+                    .put("title", asString(firstDefined(material.opt("title"), material.opt("name"))))
+                    .put("actionName", material.optString("action_name"))
+                    .put("url", urls.optJSONObject(0)?.optString("url").orEmpty())
+            )
+            // Файлы МЭШ приходят внутри materials с type=attachments.
+            for (j in 0 until urls.length()) {
+                val url = urls.optJSONObject(j)?.optString("url").orEmpty()
+                if (url.isNotBlank() && (type == "attachments" || type == "file" || type == "files")) {
+                    attachments.put(
+                        JSONObject()
+                            .put("name", asString(firstDefined(material.opt("title"), material.opt("name"))))
+                            .put("url", url)
+                    )
+                }
+            }
+        }
+        // На случай старого формата, где файлы лежат в item.attachments.
+        val rawAttachments = item.optJSONArray("attachments") ?: JSONArray()
+        for (i in 0 until rawAttachments.length()) {
+            val attachment = rawAttachments.optJSONObject(i) ?: continue
+            attachments.put(
+                JSONObject()
+                    .put("name", asString(firstDefined(attachment.opt("name"), attachment.opt("file_name"))))
+                    .put("url", asString(firstDefined(attachment.opt("url"), attachment.opt("link"))))
+            )
+        }
         return JSONObject()
             .put("id", asString(firstDefined(item.opt("homework_entry_student_id"), item.opt("homework_id"), item.opt("id"))))
             .put("subjectId", asString(firstDefined(item.opt("subject_id"), item.opt("subjectId"))))
             .put("subjectName", asString(firstDefined(item.opt("subject_name"), item.opt("subjectName"), "—")))
-            .put("description", asString(firstDefined(item.opt("description"), item.opt("text"), item.opt("homework"))))
-            .put("assignedOn", toIso(asString(firstDefined(item.opt("date_assigned_on"), item.opt("date"), today()))))
+            .put("description", asString(firstDefined(item.opt("description"), item.opt("homework"), item.opt("text"))))
+            .put("assignedOn", if (assigned.isBlank()) JSONObject.NULL else toIso(assigned))
+            .put("lessonDate", asString(firstDefined(item.opt("date"), item.opt("lesson_date_time"))).let { if (it.isBlank()) JSONObject.NULL else toIso(it) })
             .put("dueDate", if (due.isBlank()) JSONObject.NULL else toIso(due))
             .put("isDone", asBool(firstDefined(item.opt("is_done"), item.opt("isDone"))))
-            .put("attachments", item.optJSONArray("attachments") ?: JSONArray())
+            .put("materials", materials)
+            .put("attachments", attachments)
     }
 
-    /** Расписание: «терпимый» разбор — собираем уроки из известных структур. */
+    /** Расписание: собираем только реальные уроки — без перемен и пустых слотов. */
     fun normalizeSchedule(json: JSONObject?, defaultDate: String): JSONArray {
         val lessons = JSONArray()
+        val numberRe = Regex("(\\d+)")
         fun push(item: JSONObject?, dayIso: String?) {
             if (item == null) return
             val lessonObj = item.optJSONObject("lesson")
-            val begin = asString(firstDefined(item.opt("begin_time"), item.opt("start_time"), item.opt("startTime"), item.opt("time_from")))
-            val end = asString(firstDefined(item.opt("end_time"), item.opt("finish_time"), item.opt("endTime"), item.opt("time_to")))
-            val subject = asString(firstDefined(
-                item.opt("subject_name"), item.opt("subjectName"),
-                lessonObj?.optString("subject_name"), lessonObj?.optString("subjectName"),
-                item.optJSONObject("subject")?.optString("name"), "—"
-            ))
-            // пропускаем пустые слоты (без предмета и времени)
-            if (subject == "—" && begin.isBlank() && end.isBlank()) return
+            val type = item.optString("type").uppercase(Locale.US)
+            val begin = asString(
+                firstDefined(
+                    item.opt("begin_time"), item.opt("start_time"),
+                    item.opt("startTime"), item.opt("time_from"), item.opt("time")
+                )
+            )
+            val end = asString(
+                firstDefined(
+                    item.opt("end_time"), item.opt("finish_time"),
+                    item.opt("endTime"), item.opt("time_to")
+                )
+            )
+            val subject = asString(
+                firstDefined(
+                    lessonObj?.opt("subject_name"), lessonObj?.opt("subjectName"),
+                    item.opt("subject_name"), item.opt("subjectName"),
+                    item.optJSONObject("subject")?.optString("name")
+                )
+            )
+            // МЭШ отдаёт в activities ещё и перемены: type=BREAK, info="Перемена".
+            if (type in setOf("BREAK", "WINDOW", "EMPTY", "LUNCH")) return
+            if (subject.isBlank() || subject == "—" || subject == "-") return
+            if (begin.isBlank() && end.isBlank()) return
+
             val teacherObj = lessonObj?.optJSONObject("teacher") ?: item.optJSONObject("teacher")
             val teacher = firstDefined(
-                item.opt("teacher_name"), item.opt("teacherName"),
                 teacherObj?.optString("fio"),
-                listOfNotNull(teacherObj?.optString("last_name"), teacherObj?.optString("first_name"), teacherObj?.optString("middle_name")).joinToString(" ").trim().takeIf { it.isNotBlank() }
-            )
-            val room = firstDefined(item.opt("room_name"), item.opt("room"), item.opt("cabinet"), item.optJSONObject("room")?.optString("name"))
-            val teacherObj = lessonObj?.optJSONObject("teacher") ?: item.optJSONObject("teacher")
-            val teacher = firstDefined(
                 item.opt("teacher_name"), item.opt("teacherName"),
-                teacherObj?.optString("fio"),
-                listOfNotNull(teacherObj?.optString("last_name"), teacherObj?.optString("first_name"), teacherObj?.optString("middle_name")).joinToString(" ").trim().takeIf { it.isNotBlank() }
+                listOfNotNull(
+                    teacherObj?.optString("last_name"),
+                    teacherObj?.optString("first_name"),
+                    teacherObj?.optString("middle_name")
+                ).joinToString(" ").trim().takeIf { it.isNotBlank() }
             )
-            val room = firstDefined(item.opt("room_name"), item.opt("room"), item.opt("cabinet"), item.optJSONObject("room")?.optString("name"))
+            val room = firstDefined(
+                item.opt("room_name"), item.opt("room"), item.opt("cabinet"),
+                lessonObj?.opt("room_name"), item.optJSONObject("room")?.optString("name")
+            )
+            val mark = firstDefined(
+                lessonObj?.opt("mark"),
+                item.opt("mark"), item.opt("mark_value"),
+                lessonObj?.optJSONArray("marks")?.optJSONObject(0)?.opt("value")
+            )
+            val homework = firstDefined(
+                lessonObj?.opt("homework"),
+                item.opt("homework"), item.opt("home_task"), item.opt("description")
+            )
+            val number = asNullableInt(
+                firstDefined(
+                    item.opt("lesson_number"), item.opt("number"),
+                    lessonObj?.opt("lesson_number")
+                )
+            ) ?: numberRe.find(item.optString("info"))?.groupValues?.get(1)?.toIntOrNull()
+
             lessons.put(
                 JSONObject()
                     .put("date", toIso(asString(firstDefined(item.opt("date"), item.opt("day"), dayIso, defaultDate))))
-                    .put("number", asNullableInt(firstDefined(item.opt("lesson_number"), item.opt("number"))) ?: JSONObject.NULL)
+                    .put("number", number ?: JSONObject.NULL)
                     .put("begin", if (begin.isBlank()) JSONObject.NULL else begin.take(5))
                     .put("end", if (end.isBlank()) JSONObject.NULL else end.take(5))
-                    .put("subject", asString(firstDefined(subject, "—")))
-                    .put("teacher", asString(firstDefined(teacher)))
-                    .put("room", asString(firstDefined(room)))
-                    .put("homework", asString(firstDefined(item.opt("homework"), item.opt("home_task"), item.opt("description"))))
-                    .put("mark", asNullableDouble(firstDefined(item.opt("mark"), item.opt("mark_value"))) ?: JSONObject.NULL)
-                    .put("isCancelled", asBool(firstDefined(item.opt("is_cancel"), item.opt("isCancelled"))))
+                    .put("subject", subject)
+                    .put("teacher", asString(teacher))
+                    .put("room", asString(room))
+                    .put("homework", asString(homework))
+                    .put("mark", asNullableDouble(mark) ?: JSONObject.NULL)
+                    .put("isCancelled", asBool(firstDefined(lessonObj?.opt("is_cancelled"), item.opt("is_cancel"), item.opt("isCancelled"))))
             )
         }
 
-        // activities — формат расписания МЭШ (begin_time, lesson.subject_name, lesson.teacher, room_name)
+        // activities — родной формат МЭШ (begin_time, lesson.subject_name, lesson.teacher, room_name).
+        // Важно: только activities, иначе payloadList() вернёт тот же массив и уроки удвоятся.
         val activities = json?.optJSONArray("activities")
         if (activities != null) {
             for (i in 0 until activities.length()) {
                 activities.optJSONObject(i)?.let { push(it, defaultDate) }
             }
-        }
-        val list = payloadList(json)
-        for (i in 0 until list.length()) {
-            val entry = list.optJSONObject(i) ?: continue
-            val dayIso = asString(firstDefined(entry.opt("date"), entry.opt("day"), entry.opt("date_from")))
-            val nested = entry.optJSONArray("lessons") ?: entry.optJSONArray("lesson_list") ?: entry.optJSONArray("items")
-            if (nested != null) {
-                for (j in 0 until nested.length()) push(nested.optJSONObject(j), dayIso)
-            } else {
-                push(entry, dayIso.ifBlank { null })
+        } else {
+            val list = payloadList(json)
+            for (i in 0 until list.length()) {
+                val entry = list.optJSONObject(i) ?: continue
+                val dayIso = asString(firstDefined(entry.opt("date"), entry.opt("day"), entry.opt("date_from")))
+                val nested = entry.optJSONArray("lessons") ?: entry.optJSONArray("lesson_list") ?: entry.optJSONArray("items")
+                if (nested != null) {
+                    for (j in 0 until nested.length()) push(nested.optJSONObject(j), dayIso)
+                } else {
+                    push(entry, dayIso.ifBlank { null })
+                }
             }
         }
         val sorted = (0 until lessons.length()).mapNotNull { lessons.optJSONObject(it) }
@@ -682,7 +783,7 @@ object MeshCore {
     /** Первый день учебного года (1 сентября). */
     fun schoolYearStart(iso: String): String {
         val calendar = parseIso(iso)
-        val year = if (calendar.get(Calendar.MONTH) >= Calendar.AUGUST) {
+        val year = if (calendar.get(Calendar.MONTH) >= Calendar.SEPTEMBER) {
             calendar.get(Calendar.YEAR)
         } else {
             calendar.get(Calendar.YEAR) - 1

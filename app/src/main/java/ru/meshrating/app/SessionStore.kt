@@ -28,7 +28,7 @@ class SessionStore(context: Context) {
         private const val KEY_STUDENT_ID = "studentId"
         private const val KEY_PERSON_ID = "personId"
         private const val KEY_PARENT_NAME = "parentName"
-        private const val KEY_NAMES = "names"
+        private const val KEY_NAMES = "names_v2"
         private const val KEY_LAST_REFRESH = "lastRefresh"
     }
 
@@ -73,19 +73,25 @@ class SessionStore(context: Context) {
     var profileId: String?
         get() = session.getString(KEY_PROFILE_ID, null)
         set(value) {
-            session.edit().putString(KEY_PROFILE_ID, value).apply()
+            session.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_PROFILE_ID) else putString(KEY_PROFILE_ID, value)
+            }.apply()
         }
 
     var studentId: String?
         get() = session.getString(KEY_STUDENT_ID, null)
         set(value) {
-            session.edit().putString(KEY_STUDENT_ID, value).apply()
+            session.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_STUDENT_ID) else putString(KEY_STUDENT_ID, value)
+            }.apply()
         }
 
     var personId: String?
         get() = session.getString(KEY_PERSON_ID, null)
         set(value) {
-            session.edit().putString(KEY_PERSON_ID, value).apply()
+            session.edit().apply {
+                if (value.isNullOrBlank()) remove(KEY_PERSON_ID) else putString(KEY_PERSON_ID, value)
+            }.apply()
         }
 
     var parentName: String?
@@ -123,14 +129,22 @@ class SessionStore(context: Context) {
         return try {
             val json = JSONObject(raw)
             val result = mutableMapOf<String, String>()
-            json.keys().forEach { key -> result[key] = json.optString(key) }
+            json.keys().forEach { key ->
+                val name = json.optString(key)
+                // Не берём из кэша заглушки: настоящее имя дотянем при следующем запросе.
+                if (key.isNotBlank() && name.isNotBlank() && !name.startsWith("Ученик ")) {
+                    result[key] = name
+                }
+            }
             result
         } catch (error: Exception) {
             mutableMapOf()
         }
     }
 
+    @Synchronized
     fun saveName(id: String, name: String) {
+        if (id.isBlank() || name.isBlank() || name.startsWith("Ученик ")) return
         val current = loadNameCache().toMutableMap()
         current[id] = name
         cache.edit().putString(KEY_NAMES, JSONObject(current as Map<*, *>).toString()).apply()

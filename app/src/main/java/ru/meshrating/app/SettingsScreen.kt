@@ -1,45 +1,130 @@
 package ru.meshrating.app
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 @Composable
-fun SettingsScreen(store: SessionStore) {
+fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?, onLogout: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var profile by remember { mutableStateOf<org.json.JSONObject?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val tokenInfo = MeshCore.describeToken(store.token)
 
-    LaunchedEffect(Unit) {
-        loading = true
-        scope.launch {
-            try {
-                val client = MeshClient(baseUrl = MeshCore.HOST, token = store.token, profileId = store.studentId)
-                profile = withContext(Dispatchers.IO) { client.fetchProfile() }
-            } catch (_: Exception) { }
-            finally { loading = false }
-        }
-    }
-
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
         Text("Настройки", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
-        if (loading) CircularProgressIndicator()
-        else {
-            profile?.let { p ->
-                val child = p.optJSONObject("defaultChild")
-                Text("Класс: ${child?.optString("className", "")}")
-                Text("Школа: ${child?.optString("schoolName", "")}")
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("Приложение", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(6.dp))
+                SettingsRow("Сервер", MeshCore.HOST.removePrefix("https://"))
+                SettingsRow("Хранилище", if (store.isEncrypted()) "зашифровано" else "приватное")
+                SettingsRow("Кэш имён", "включён")
             }
-            Spacer(Modifier.height(8.dp))
-            Text("Токен: ${store.token?.take(8) ?: "—"}…")
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = { store.clear() }) { Text("Выйти и удалить токен") }
         }
+
+        Spacer(Modifier.height(8.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("Токен МЭШ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(6.dp))
+                SettingsRow("Маска", tokenInfo.optString("mask").ifBlank { "—" })
+                SettingsRow(
+                    "Тип",
+                    when (tokenInfo.optString("kind")) {
+                        "jwt" -> "JWT"
+                        "opaque" -> "opaque"
+                        else -> "—"
+                    }
+                )
+                if (tokenInfo.has("length")) SettingsRow("Длина", tokenInfo.optInt("length").toString())
+                if (tokenInfo.has("expiresAt")) {
+                    SettingsRow("Истекает", MeshCore.dateShort(
+                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                            .format(java.util.Date(tokenInfo.optLong("expiresAt")))
+                    ))
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        refreshing = true
+                        message = null
+                        error = null
+                        scope.launch {
+                            val fresh = withContext(Dispatchers.IO) { client.refreshToken() }
+                            if (fresh.isNullOrBlank()) {
+                                error = "МЭШ не выдал новый токен. Возможно, сессия завершена — войдите заново."
+                            } else {
+                                store.token = fresh
+                                client.token = fresh
+                                message = "Токен обновлён"
+                            }
+                            refreshing = false
+                        }
+                    },
+                    enabled = !refreshing,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (refreshing) CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    else Text("Обновить токен")
+                }
+                message?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                }
+                error?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text("Аккаунт", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (profile != null) "Профиль загружен" else "Профиль ещё не загружен",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(onClick = onLogout, modifier = Modifier.fillMaxWidth()) {
+                    Text("Выйти и удалить токен")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(100.dp)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f)
+        )
     }
 }

@@ -6,9 +6,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -18,29 +19,37 @@ import org.json.JSONObject
 @Composable
 fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, onLogout: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(personId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var subjects by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var selectedSubject by remember { mutableStateOf("all") }
     var board by remember { mutableStateOf<JSONObject?>(null) }
-    var date by remember { mutableStateOf(MeshCore.today()) }
+    val date = MeshCore.today()
 
     fun load() {
+        if (personId.isNullOrBlank()) {
+            loading = false
+            return
+        }
         loading = true
         error = null
         scope.launch {
             try {
-                val subs = withContext(Dispatchers.IO) {
+                val result = withContext(Dispatchers.IO) {
                     val arr = client.getSubjects(personId, date)
-                    (0 until arr.length()).map { arr.getJSONObject(it) }
+                    val subs = (0 until arr.length()).map { arr.getJSONObject(it) }
+                    val b = client.getRankBoard(
+                        personId = personId,
+                        date = date,
+                        subjectId = if (selectedSubject == "all") null else selectedSubject,
+                        subjectName = subs.firstOrNull { it.optString("id") == selectedSubject }?.optString("name")
+                    )
+                    subs to b
                 }
-                subjects = subs
-                val b = withContext(Dispatchers.IO) {
-                    client.getRankBoard(personId, date, if (selectedSubject == "all") null else selectedSubject)
-                }
-                board = b
+                subjects = result.first
+                board = result.second
             } catch (e: Exception) {
-                error = e.message ?: "Ошибка"
+                error = MeshCore.describeError(e)
             } finally {
                 loading = false
             }
@@ -49,62 +58,160 @@ fun RankingScreen(store: SessionStore, client: MeshClient, personId: String?, on
 
     LaunchedEffect(personId, date, selectedSubject) { load() }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text("Рейтинг", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
 
-        // KPI
         board?.optJSONObject("summary")?.let { s ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                KpiCard("Моё место", "#${s.optInt("myPlace", 0)} из ${s.optInt("total", 0)}")
-                KpiCard("Мой балл", s.optDouble("myAverage", 0.0).toString())
-                KpiCard("Класс", s.optDouble("classAverage", 0.0).toString())
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                KpiCard(
+                    label = "Моё место",
+                    value = if (s.optInt("myPlace", 0) > 0) "#${s.optInt("myPlace")}" else "—",
+                    sub = if (s.optInt("total", 0) > 0) "из ${s.optInt("total")}" else "",
+                    modifier = Modifier.weight(1f)
+                )
+                KpiCard(
+                    label = "Мой балл",
+                    value = formatMark(if (s.isNull("myAverage")) null else s.optDouble("myAverage")),
+                    sub = "",
+                    modifier = Modifier.weight(1f)
+                )
+                KpiCard(
+                    label = "Класс",
+                    value = formatMark(if (s.isNull("classAverage")) null else s.optDouble("classAverage")),
+                    sub = "медиана ${formatMark(if (s.isNull("classMedian")) null else s.optDouble("classMedian"))}",
+                    modifier = Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(8.dp))
         }
 
-        // Subject chips: horizontal scroll, no wrap
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             item {
-                FilterChip(selected = selectedSubject == "all", onClick = { selectedSubject = "all" }, label = { Text("Общий", maxLines = 1) })
+                FilterChip(
+                    selected = selectedSubject == "all",
+                    onClick = { selectedSubject = "all" },
+                    label = { Text("Общий", maxLines = 1) }
+                )
             }
             items(subjects) { s ->
-                FilterChip(selected = selectedSubject == s.optString("id"), onClick = { selectedSubject = s.optString("id") }, label = { Text(s.optString("name"), maxLines = 1) })
+                FilterChip(
+                    selected = selectedSubject == s.optString("id"),
+                    onClick = { selectedSubject = s.optString("id") },
+                    label = {
+                        Text(
+                            s.optString("name") + " · " + formatMark(if (s.isNull("average")) null else s.optDouble("average")),
+                            maxLines = 1
+                        )
+                    }
+                )
             }
         }
         Spacer(Modifier.height(8.dp))
 
-        if (loading) {
-            CircularProgressIndicator()
-        } else if (error != null) {
-            Text(error!!, color = MaterialTheme.colorScheme.error)
-        } else {
-            val rows = board?.optJSONArray("rows")
-            LazyColumn {
-                if (rows != null) {
-                    items((0 until rows.length()).map { rows.getJSONObject(it) }) { row ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("#${row.optInt("place")} ${row.optString("name")}")
-                            Text(row.optDouble("average", 0.0).toString(), fontWeight = FontWeight.Bold)
+        when {
+            personId.isNullOrBlank() -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(8.dp))
+                        Text("Загружаем профиль ученика…")
+                    }
+                }
+            }
+            loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            error != null -> {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { load() }) { Text("Повторить") }
+                }
+            }
+            else -> {
+                val rows = board?.optJSONArray("rows")
+                if (rows == null || rows.length() == 0) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Нет данных за эту дату")
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items((0 until rows.length()).map { rows.getJSONObject(it) }) { row ->
+                            val average = if (row.isNull("average")) null else row.optDouble("average")
+                            val isMe = row.optBoolean("isMe")
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isMe) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
+                                    else MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "#${row.optInt("place")}",
+                                        modifier = Modifier.width(42.dp),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            row.optString("name").ifBlank { "Без имени" },
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (isMe) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        val status = row.optString("status")
+                                        val delta = if (row.isNull("averageDelta")) null else row.optDouble("averageDelta")
+                                        val sub = buildString {
+                                            if (isMe) append("это я")
+                                            if (status.isNotBlank()) {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(
+                                                    when (status) {
+                                                        "TOP" -> "сильный"
+                                                        "MIDDLE" -> "средний"
+                                                        else -> status
+                                                    }
+                                                )
+                                            }
+                                            if (delta != null) {
+                                                if (isNotEmpty()) append(" · ")
+                                                append(if (delta >= 0) "▲ " else "▼ ")
+                                                append(formatMark(Math.abs(delta)))
+                                            }
+                                        }
+                                        if (sub.isNotBlank()) {
+                                            Text(
+                                                sub,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    GradeBadge(formatMark(average), average)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = onLogout) { Text("Выйти") }
     }
 }
 
 @Composable
-fun KpiCard(label: String, value: String) {
-    Card(modifier = Modifier.width(110.dp)) {
-        Column(modifier = Modifier.padding(8.dp)) {
-            Text(label, style = MaterialTheme.typography.labelSmall)
+fun KpiCard(label: String, value: String, sub: String, modifier: Modifier = Modifier) {
+    Card(modifier = modifier) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (sub.isNotBlank()) {
+                Text(sub, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }

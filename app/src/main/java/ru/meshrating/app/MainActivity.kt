@@ -52,12 +52,14 @@ fun MeshRankerTheme(content: @Composable () -> Unit) {
 fun AppRoot(store: SessionStore, activity: MainActivity) {
     var token by remember { mutableStateOf(store.token ?: "") }
     var profile by remember { mutableStateOf<JSONObject?>(null) }
-    var children by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var activeStudentId by remember { mutableStateOf(store.studentId) }
     var activePersonId by remember { mutableStateOf(store.personId) }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var screen by remember { mutableStateOf(if (store.token != null) "ranking" else "login") }
+    var booting by remember { mutableStateOf(store.token != null && (store.studentId == null || store.personId == null)) }
+    var bootError by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableStateOf(0) }
+    var loginLoading by remember { mutableStateOf(false) }
+    var loginError by remember { mutableStateOf<String?>(null) }
+    var screen by remember { mutableStateOf(if (store.token != null) "main" else "login") }
     val scope = rememberCoroutineScope()
 
     val client = remember {
@@ -71,78 +73,174 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
         )
     }
 
-    if (screen == "login") {
-        LoginScreen(
+    fun applyProfile(prof: JSONObject): Boolean {
+        profile = prof
+        val ch = (0 until (prof.optJSONArray("children")?.length() ?: 0))
+            .mapNotNull { prof.optJSONArray("children")?.optJSONObject(it) }
+        val child = ch.firstOrNull()
+        val studentId = child?.optString("id")?.takeIf { it.isNotBlank() }
+        val personId = child?.optString("personId")?.takeIf { it.isNotBlank() }
+            ?: child?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
+        if (studentId != null) {
+            activeStudentId = studentId
+            store.studentId = studentId
+            store.profileId = studentId
+            client.profileId = studentId
+        }
+        if (personId != null) {
+            activePersonId = personId
+            store.personId = personId
+        }
+        store.save(
+            store.token,
+            studentId,
+            studentId,
+            personId,
+            prof.optJSONObject("parent")?.optString("name")
+        )
+        return studentId != null && personId != null
+    }
+
+    fun logout() {
+        store.clear()
+        token = ""
+        profile = null
+        activeStudentId = null
+        activePersonId = null
+        client.token = null
+        client.profileId = null
+        screen = "login"
+        bootError = null
+        booting = false
+        loginError = null
+    }
+
+    // При каждом старте приложения сначала добираем профиль. Если id ученика ещё нет,
+    // экран рейтинга не показываем — иначе первый запрос уходит с пустым personId и МЭШ отвечает 400.
+    LaunchedEffect(store.token, retryKey) {
+        val savedToken = store.token
+        if (savedToken.isNullOrBlank()) {
+            screen = "login"
+            booting = false
+            return@LaunchedEffect
+        }
+        client.token = savedToken
+        client.profileId = store.studentId
+        val hasIds = !store.studentId.isNullOrBlank() && !store.personId.isNullOrBlank()
+        if (!hasIds) {
+            booting = true
+            bootError = null
+        }
+        try {
+            val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
+            if (!applyProfile(prof)) {
+                bootError = "В профиле МЭШ не найден ученик. Войдите заново."
+            } else {
+                bootError = null
+            }
+        } catch (e: Exception) {
+            val meshError = e as? MeshCore.MeshError
+            if (meshError?.code == "unauthorized") {
+                logout()
+                return@LaunchedEffect
+            }
+            if (!hasIds) bootError = MeshCore.describeError(e)
+        } finally {
+            booting = false
+        }
+    }
+
+    when {
+        screen == "login" -> LoginScreen(
             onLogin = { rawToken ->
-                loading = true
-                error = null
+                loginLoading = true
+                loginError = null
                 scope.launch {
                     try {
                         val result = withContext(Dispatchers.IO) { client.signIn(rawToken) }
-                        val childObj = result.optJSONObject("child")
-                        val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
-                        profile = prof
-                        children = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
-                        activeStudentId = children.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() }
-                        activePersonId = children.firstOrNull()?.optString("personId")?.takeIf { it.isNotBlank() }
-                            ?: children.firstOrNull()?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
-                        store.save(result.optString("token", rawToken), result.optString("profileId").takeIf { it.isNotBlank() }, activeStudentId, activePersonId, null)
-                        store.studentId = activeStudentId
-                        store.personId = activePersonId
-                        store.profileId = activeStudentId
-                        token = result.optString("token", rawToken)
-                        client.token = token
-                        client.profileId = activeStudentId
-                        screen = "ranking"
-                        store.personId = activePersonId
-                        store.profileId = activeStudentId
-                        token = result.optString("token", rawToken)
-                        client.token = token
-                        client.profileId = activeStudentId
-                        screen = "ranking"
+                        val tokenValue = result.optString("token", rawToken)
+                        val prof = result.optJSONObject("profile")
+                            ?: withContext(Dispatchers.IO) { client.fetchProfile() }
+                        store.token = tokenValue
+                        client.token = tokenValue
+                        token = tokenValue
+                        if (!applyProfile(prof)) {
+                            throw MeshCore.MeshError(
+                                "В профиле МЭШ не найден ученик. Проверьте, что вы вошли как родитель.",
+                                "no-student"
+                            )
+                        }
+                        bootError = null
+                        screen = "main"
                     } catch (e: Exception) {
-                        error = e.message ?: "Ошибка входа"
+                        loginError = MeshCore.describeError(e)
                     } finally {
-                        loading = false
+                        loginLoading = false
                     }
                 }
             },
-            loading = loading,
-            error = error
+            loading = loginLoading,
+            error = loginError
         )
-    } else {
-        // Fetch profile on reopen if needed
-        LaunchedEffect(activePersonId) {
-            if (activePersonId == null) {
-                scope.launch {
-                    try {
-                        val prof = withContext(Dispatchers.IO) { client.fetchProfile() }
-                        profile = prof
-                        val ch = (0 until prof.optJSONArray("children").length()).map { prof.optJSONArray("children").getJSONObject(it) }
-                        children = ch
-                        activeStudentId = ch.firstOrNull()?.optString("id")?.takeIf { it.isNotBlank() } ?: activeStudentId
-                        activePersonId = ch.firstOrNull()?.optString("personId")?.takeIf { it.isNotBlank() }
-                            ?: ch.firstOrNull()?.optString("contingent_guid")?.takeIf { it.isNotBlank() }
-                        store.studentId = activeStudentId
-                        store.profileId = activeStudentId
-                    } catch (_: Exception) { }
-                }
-            }
-        }
-        MainScaffold(store, client, activePersonId, activeStudentId, onLogout = {
-            store.clear()
-            token = ""
-            profile = null
-            children = emptyList()
-            activeStudentId = null
-            activePersonId = null
-            screen = "login"
-        })
+
+        booting -> BootScreen()
+
+        bootError != null && (activePersonId == null || activeStudentId == null) -> BootErrorScreen(
+            message = bootError ?: "Не удалось загрузить профиль",
+            onRetry = { retryKey++ },
+            onLogout = { logout() }
+        )
+
+        else -> MainScaffold(
+            store = store,
+            client = client,
+            profile = profile,
+            personId = activePersonId,
+            studentId = activeStudentId,
+            onLogout = { logout() }
+        )
     }
 }
 
 @Composable
-fun MainScaffold(store: SessionStore, client: MeshClient, personId: String?, studentId: String?, onLogout: () -> Unit) {
+fun BootScreen() {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        CircularProgressIndicator()
+        Spacer(Modifier.height(16.dp))
+        Text("Загружаем профиль МЭШ…")
+    }
+}
+
+@Composable
+fun BootErrorScreen(message: String, onRetry: () -> Unit, onLogout: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("Не удалось открыть профиль", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(8.dp))
+        Text(message, color = MaterialTheme.colorScheme.error)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onRetry) { Text("Повторить") }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onLogout) { Text("Войти заново") }
+    }
+}
+
+@Composable
+fun MainScaffold(
+    store: SessionStore,
+    client: MeshClient,
+    profile: JSONObject?,
+    personId: String?,
+    studentId: String?,
+    onLogout: () -> Unit
+) {
     var currentTab by remember { mutableStateOf("ranking") }
     Scaffold(
         bottomBar = {
@@ -166,8 +264,8 @@ fun MainScaffold(store: SessionStore, client: MeshClient, personId: String?, stu
                 "marks" -> MarksScreen(store, client, studentId)
                 "homeworks" -> HomeworksScreen(store, client, studentId)
                 "schedule" -> ScheduleScreen(store, client, studentId)
-                "profile" -> ProfileScreen(store, client, onLogout)
-                "settings" -> SettingsScreen(store)
+                "profile" -> ProfileScreen(store, client, profile, onLogout)
+                "settings" -> SettingsScreen(store, client, profile, onLogout)
             }
         }
     }
@@ -184,7 +282,7 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
         Text("Вход в МЭШ", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.height(8.dp))
         val context = LocalContext.current
-        val url = "https://school.mos.ru/v2/token/refresh?roleId=2&subsystem=2"
+        val url = MeshCore.loginUrl()
         Text(
             text = "1. Откройте: $url",
             style = MaterialTheme.typography.bodySmall,

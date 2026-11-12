@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -16,50 +18,124 @@ import org.json.JSONObject
 @Composable
 fun ScheduleScreen(store: SessionStore, client: MeshClient, studentId: String?) {
     val scope = rememberCoroutineScope()
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var lessons by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var selectedDate by remember { mutableStateOf(MeshCore.today()) }
 
-    LaunchedEffect(studentId, selectedDate) {
-        if (studentId == null) { loading = false; return@LaunchedEffect }
+    fun load() {
+        if (studentId.isNullOrBlank()) {
+            loading = false
+            return
+        }
         loading = true
+        error = null
         scope.launch {
             try {
                 val arr = withContext(Dispatchers.IO) { client.getSchedule(studentId, selectedDate) }
                 lessons = (0 until arr.length()).map { arr.getJSONObject(it) }
             } catch (e: Exception) {
-                error = e.message
+                error = MeshCore.describeError(e)
             } finally {
                 loading = false
             }
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
-        // Day selector
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = { selectedDate = MeshCore.addDays(selectedDate, -1) }) { Text("‹") }
-            Text(selectedDate, style = MaterialTheme.typography.titleMedium)
-            IconButton(onClick = { selectedDate = MeshCore.addDays(selectedDate, 1) }) { Text("›") }
-        }
-        Spacer(Modifier.height(8.dp))
+    LaunchedEffect(studentId, selectedDate) { load() }
+
+    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
         Text("Расписание", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
-        if (loading) CircularProgressIndicator()
-        else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
-        else {
-            LazyColumn {
-                items(lessons) { l ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Row(modifier = Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column {
-                                Text(l.optString("subject"))
-                                val begin = l.optString("begin").takeIf { it.isNotBlank() && it != "null" } ?: "—"
-                                val end = l.optString("end").takeIf { it.isNotBlank() && it != "null" } ?: ""
-                                Text("$begin${if (end.isNotBlank()) "–$end" else ""}", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(4.dp))
+        DaySelector(
+            date = selectedDate,
+            onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
+            onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
+        )
+        Spacer(Modifier.height(4.dp))
+
+        when {
+            studentId.isNullOrBlank() -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(8.dp))
+                        Text("Загружаем профиль ученика…")
+                    }
+                }
+            }
+            loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            error != null -> {
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error)
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { load() }) { Text("Повторить") }
+                }
+            }
+            lessons.none { it.optString("subject").let { s -> s.isNotBlank() && s != "—" } } ->
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("Нет уроков")
+                }
+            else -> LazyColumn(modifier = Modifier.weight(1f)) {
+                items(lessons.filter { it.optString("subject").let { s -> s.isNotBlank() && s != "—" } }) { lesson ->
+                    val begin = lesson.optString("begin").takeIf { it.isNotBlank() && it != "null" }
+                    val end = lesson.optString("end").takeIf { it.isNotBlank() && it != "null" }
+                    val time = if (begin != null) "$begin${if (end != null) "–$end" else ""}" else "—"
+                    val number = if (lesson.isNull("number")) null else lesson.optInt("number")
+                    val mark = if (lesson.isNull("mark")) null else lesson.optDouble("mark")
+                    val teacher = lesson.optString("teacher")
+                    val room = lesson.optString("room")
+                    val homework = lesson.optString("homework")
+
+                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Column(modifier = Modifier.width(70.dp)) {
+                                Text(time, fontWeight = FontWeight.Bold)
+                                if (number != null) {
+                                    Text(
+                                        "$number урок",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                            Text(l.optString("room"), style = MaterialTheme.typography.bodySmall)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    lesson.optString("subject").ifBlank { "Урок" },
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                val details = listOfNotNull(
+                                    room.takeIf { it.isNotBlank() },
+                                    teacher.takeIf { it.isNotBlank() }
+                                ).joinToString(" · ")
+                                if (details.isNotBlank()) {
+                                    Text(
+                                        details,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (homework.isNotBlank()) {
+                                    Spacer(Modifier.height(3.dp))
+                                    Text(
+                                        "ДЗ: $homework",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            if (mark != null) {
+                                Spacer(Modifier.width(8.dp))
+                                GradeBadge(formatMark(mark), mark)
+                            }
                         }
                     }
                 }
