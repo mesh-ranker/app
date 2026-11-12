@@ -30,6 +30,7 @@ class SessionStore(context: Context) {
         private const val KEY_PARENT_NAME = "parentName"
         private const val KEY_NAMES = "names_v2"
         private const val KEY_LAST_REFRESH = "lastRefresh"
+        private const val KEY_LAST_UPDATE_CHECK = "lastUpdateCheck"
     }
 
     private val appContext = context.applicationContext
@@ -104,6 +105,13 @@ class SessionStore(context: Context) {
         get() = session.getLong(KEY_LAST_REFRESH, 0L)
         set(value) {
             session.edit().putLong(KEY_LAST_REFRESH, value).apply()
+        }
+
+    /** Время последней попытки проверки обновлений (в миллисекундах). */
+    var lastUpdateCheck: Long
+        get() = settings.getLong(KEY_LAST_UPDATE_CHECK, 0L)
+        set(value) {
+            settings.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
         }
 
     /** Токен + кэш обновляются одной транзакцией — после входа/обновления токена. */

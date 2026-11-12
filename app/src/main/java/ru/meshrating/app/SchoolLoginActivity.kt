@@ -161,6 +161,11 @@ class SchoolLoginActivity : AppCompatActivity() {
         return true
     }
 
+    @Suppress("DEPRECATION")
+    override fun onBackPressed() {
+        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+    }
+
     override fun onDestroy() {
         scope.cancel()
         webView.stopLoading()

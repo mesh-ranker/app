@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,7 +21,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -63,7 +66,9 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
     var loginLoading by remember { mutableStateOf(false) }
     var loginError by remember { mutableStateOf<String?>(null) }
     var screen by remember { mutableStateOf(if (store.token != null) "main" else "login") }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     val client = remember {
         MeshClient(
@@ -118,6 +123,15 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
         loginError = null
     }
 
+    // Проверка обновлений на GitHub Releases: не чаще одного раза в час.
+    LaunchedEffect(Unit) {
+        val now = System.currentTimeMillis()
+        if (now - store.lastUpdateCheck < UpdateChecker.CHECK_INTERVAL_MS) return@LaunchedEffect
+        store.lastUpdateCheck = now
+        val found = withContext(Dispatchers.IO) { UpdateChecker.check(context) }
+        if (found != null) updateInfo = found
+    }
+
     // При каждом старте приложения сначала добираем профиль. Если id ученика ещё нет,
     // экран рейтинга не показываем — иначе первый запрос уходит с пустым personId и МЭШ отвечает 400.
     LaunchedEffect(store.token, retryKey) {
@@ -151,6 +165,36 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
         } finally {
             booting = false
         }
+    }
+
+    updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Доступно обновление") },
+            text = {
+                Text(
+                    "На GitHub уже есть версия ${info.versionName}. " +
+                        "Можно скачать и установить её по ссылке."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        updateInfo = null
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                        }
+                    }
+                ) {
+                    Text("Скачать")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) {
+                    Text("Позже")
+                }
+            }
+        )
     }
 
     when {
@@ -235,6 +279,13 @@ fun BootErrorScreen(message: String, onRetry: () -> Unit, onLogout: () -> Unit) 
     }
 }
 
+/** Состояние экрана для истории кнопки/жеста «назад». */
+private data class NavState(
+    val tab: String,
+    val subjectId: String?,
+    val target: HomeworkTarget?
+)
+
 @Composable
 fun MainScaffold(
     store: SessionStore,
@@ -247,6 +298,28 @@ fun MainScaffold(
     var currentTab by remember { mutableStateOf("ranking") }
     var rankingSubjectId by remember { mutableStateOf<String?>(null) }
     var homeworkTarget by remember { mutableStateOf<HomeworkTarget?>(null) }
+    val backStack = remember { mutableStateListOf<NavState>() }
+
+    fun navigateTo(tab: String, subjectId: String? = null, target: HomeworkTarget? = null) {
+        if (tab == currentTab && subjectId == rankingSubjectId && target == homeworkTarget) return
+        backStack.add(NavState(currentTab, rankingSubjectId, homeworkTarget))
+        currentTab = tab
+        rankingSubjectId = subjectId
+        homeworkTarget = target
+    }
+
+    // Жест/кнопка «назад» сначала проходят по истории экранов, а не сворачивают приложение.
+    BackHandler(enabled = backStack.isNotEmpty() || rankingSubjectId != null) {
+        if (backStack.isNotEmpty()) {
+            val previous = backStack.removeAt(backStack.lastIndex)
+            currentTab = previous.tab
+            rankingSubjectId = previous.subjectId
+            homeworkTarget = previous.target
+        } else {
+            rankingSubjectId = null
+        }
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -254,12 +327,18 @@ fun MainScaffold(
                 items.forEach { (key, label) ->
                     NavigationBarItem(
                         selected = currentTab == key,
-                        onClick = {
-                            currentTab = key
-                            if (key == "ranking") rankingSubjectId = null
-                            if (key != "homeworks") homeworkTarget = null
+                        onClick = { navigateTo(key) },
+                        label = {
+                            Text(
+                                text = label,
+                                fontSize = 8.sp,
+                                lineHeight = 10.sp,
+                                letterSpacing = 0.sp,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         },
-                        label = { Text(label) },
                         icon = { }
                     )
                 }
@@ -281,10 +360,7 @@ fun MainScaffold(
                     client,
                     personId,
                     onOpenSubject = { id, _ ->
-                        if (id.isNotBlank()) {
-                            rankingSubjectId = id
-                            currentTab = "ranking"
-                        }
+                        if (id.isNotBlank()) navigateTo("ranking", subjectId = id)
                     }
                 )
                 "marks" -> MarksScreen(store, client, studentId)
@@ -299,10 +375,7 @@ fun MainScaffold(
                     store,
                     client,
                     studentId,
-                    onHomeworkClick = {
-                        homeworkTarget = it
-                        currentTab = "homeworks"
-                    }
+                    onHomeworkClick = { navigateTo("homeworks", target = it) }
                 )
                 "profile" -> ProfileScreen(store, client, profile, onLogout)
                 "settings" -> SettingsScreen(store, client, profile, onLogout)
