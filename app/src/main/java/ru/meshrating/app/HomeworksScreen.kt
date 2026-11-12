@@ -4,6 +4,8 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -41,12 +43,16 @@ fun HomeworksScreen(
     var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var homeworks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    var selectedDate by remember { mutableStateOf(MeshCore.today()) }
+    // По умолчанию — ДЗ, заданные НА ЗАВТРА.
+    var selectedDate by remember { mutableStateOf(MeshCore.addDays(MeshCore.today(), 1)) }
     // due — домашнее задание к уроку выбранного дня (как в дневнике);
     // assigned — по дате, когда его задали.
     var mode by remember { mutableStateOf("due") }
     var focusIndex by remember { mutableStateOf<Int?>(null) }
     var launchingMaterialId by remember { mutableStateOf<String?>(null) }
+    // Локальные (оптимистичные) отметки «выполнено»: entryStudentId → сделано.
+    var doneOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    var savingDone by remember { mutableStateOf<Set<String>>(emptySet()) }
     val from = MeshCore.addDays(selectedDate, -45)
     val to = MeshCore.addDays(selectedDate, 45)
 
@@ -95,6 +101,30 @@ fun HomeworksScreen(
         }
     }
 
+    // Отметка/снятие отметки «выполнено». Сразу меняем UI, затем подтверждаем у МЭШ;
+    // при ошибке откатываем и показываем сообщение.
+    fun toggleDone(homework: JSONObject, target: Boolean) {
+        val entryId = homework.optString("entryStudentId").ifBlank { homework.optString("id") }
+        if (entryId.isBlank()) return
+        val type = homework.optString("entryType").ifBlank { "OO" }
+        val previous = doneOverrides[entryId] ?: homework.optBoolean("isDone")
+        if (previous == target) return
+        doneOverrides = doneOverrides + (entryId to target)
+        savingDone = savingDone + entryId
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { client.setHomeworkDone(entryId, type, target) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                doneOverrides = doneOverrides + (entryId to previous)
+                Toast.makeText(context, MeshCore.describeError(e), Toast.LENGTH_LONG).show()
+            } finally {
+                savingDone = savingDone - entryId
+            }
+        }
+    }
+
     LaunchedEffect(studentId, selectedDate) { load() }
 
     LaunchedEffect(target) {
@@ -130,6 +160,11 @@ fun HomeworksScreen(
             date = selectedDate,
             onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
             onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
+        )
+        RelativeDayChips(
+            today = MeshCore.today(),
+            selectedDate = selectedDate,
+            onSelect = { selectedDate = it }
         )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(
@@ -173,6 +208,7 @@ fun HomeworksScreen(
             else -> {
                 LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
                     itemsIndexed(filtered) { index, h ->
+                        val entryId = h.optString("entryStudentId").ifBlank { h.optString("id") }
                         HomeworkCard(
                             h = h,
                             uriHandler = uriHandler,
@@ -180,7 +216,10 @@ fun HomeworksScreen(
                             highlighted = focusIndex == index,
                             dimmed = focusIndex != null && focusIndex != index,
                             launchingMaterialId = launchingMaterialId,
-                            onOpenMaterial = ::openMaterial
+                            onOpenMaterial = ::openMaterial,
+                            isDone = doneOverrides[entryId] ?: h.optBoolean("isDone"),
+                            savingDone = entryId.isNotBlank() && entryId in savingDone,
+                            onToggleDone = { target -> toggleDone(h, target) }
                         )
                     }
                 }
@@ -197,7 +236,10 @@ private fun HomeworkCard(
     highlighted: Boolean,
     dimmed: Boolean,
     launchingMaterialId: String?,
-    onOpenMaterial: (String, JSONObject) -> Unit
+    onOpenMaterial: (String, JSONObject) -> Unit,
+    isDone: Boolean,
+    savingDone: Boolean,
+    onToggleDone: (Boolean) -> Unit
 ) {
     val description = h.optString("description").trim().let { if (it == ".") "" else it }
     val assigned = h.optString("assignedOn").takeIf { it.isNotBlank() && it != "null" }
@@ -223,11 +265,21 @@ private fun HomeworkCard(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(
+                    checked = isDone,
+                    onCheckedChange = { onToggleDone(it) },
+                    enabled = !savingDone
+                )
+                Spacer(Modifier.width(4.dp))
                 Text(
                     h.optString("subjectName").ifBlank { "Задание" },
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
+                if (savingDone) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(6.dp))
+                }
                 if (due != null) {
                     Text(
                         "до ${MeshCore.dateShort(due)}",
@@ -342,6 +394,40 @@ private fun HomeworkCard(
                     )
                 }
             }
+        }
+    }
+}
+
+private data class RelativeDay(val offset: Int, val label: String)
+
+private val RELATIVE_DAYS = listOf(
+    RelativeDay(-2, "Позавчера"),
+    RelativeDay(-1, "Вчера"),
+    RelativeDay(0, "Сегодня"),
+    RelativeDay(1, "Завтра"),
+    RelativeDay(2, "Послезавтра")
+)
+
+/** Быстрые кнопки «Позавчера … Послезавтра»; выбранный день подсвечивается. */
+@Composable
+private fun RelativeDayChips(
+    today: String,
+    selectedDate: String,
+    onSelect: (String) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        RELATIVE_DAYS.forEach { day ->
+            val date = MeshCore.addDays(today, day.offset)
+            FilterChip(
+                selected = selectedDate == date,
+                onClick = { onSelect(date) },
+                label = { Text(day.label) }
+            )
         }
     }
 }

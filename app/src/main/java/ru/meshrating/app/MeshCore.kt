@@ -37,6 +37,9 @@ object MeshCore {
         const val ACADEMIC_YEARS = "/api/ej/core/family/v1/academic_years"
         const val HOMEWORKS = "/api/family/web/v1/homeworks"
         const val HOMEWORK_LAUNCH = "/api/ej/partners/v1/homeworks/launch"
+
+        /** Отметка домашнего задания «выполнено» (POST) / снятие отметки (DELETE). */
+        fun homeworkDone(entryStudentId: String): String = "$HOMEWORKS/$entryStudentId/done"
         const val SCHEDULE = "/api/family/web/v1/schedule"
         const val TOKEN_REFRESH = "/v2/token/refresh"
         const val USER_INFO = "/v3/userinfo"
@@ -738,7 +741,8 @@ object MeshCore {
      * Нормализует список учебных годов из `/api/ej/core/family/v1/academic_years`.
      *
      * МЭШ отдаёт массив `[{id, name, begin_date, end_date, calendar_id, current_year}]`,
-     * где `id` — это и есть `academic_year_id` (например, 14 = «2026 - 2027»).
+     * где `id` — это и есть `academic_year_id`. Идентификаторы и названия годов
+     * НЕ хардкодятся: всё берётся из ответа API и кэшируется клиентом.
      */
     fun normalizeAcademicYears(items: JSONArray): JSONArray {
         val result = mutableListOf<JSONObject>()
@@ -917,6 +921,13 @@ object MeshCore {
             .put("id", homeworkId)
             .put("homeworkId", homeworkId)
             .put("homeworkEntryId", asString(item.opt("homework_entry_id")))
+            // `homework_entry_student_id` — именно его МЭШ ждёт в URL отметки «выполнено».
+            .put(
+                "entryStudentId",
+                asString(firstDefined(item.opt("homework_entry_student_id"), item.opt("homeworkEntryStudentId")))
+            )
+            // Тип задания (oo/dz/…) — в отметке уходит в query в верхнем регистре.
+            .put("entryType", asString(firstDefined(item.opt("type"), "oo")).uppercase(Locale.US))
             .put("subjectId", asString(firstDefined(item.opt("subject_id"), item.opt("subjectId"))))
             .put("subjectName", asString(firstDefined(item.opt("subject_name"), item.opt("subjectName"), "—")))
             .put("description", asString(firstDefined(item.opt("description"), item.opt("homework"), item.opt("text"))))

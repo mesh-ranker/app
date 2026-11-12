@@ -18,6 +18,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,13 +31,14 @@ import java.util.Calendar
 import java.util.Locale
 
 /**
- * «Оценки» объединяют два режима:
+ * «Оценки» объединяют три режима:
  *  - по дате — все оценки за последние 30 дней, сгруппированные по дням;
  *  - по предмету — список предметов из `/subject_marks`, по нажатию открывается
- *    список оценок конкретного предмета.
+ *    список оценок конкретного предмета;
+ *  - итоговые — таблица четвертей и годовой по предметам с выбором учебного года.
  *
- * В обоих режимах показываются графики (распределение оценок и динамика по
- * неделям) и раздел «Итоговые оценки» с выбором учебного года.
+ * Графики (распределение оценок и динамика по неделям) показываются в режимах
+ * «по дате» и в карточке предмета.
  */
 @Composable
 fun MarksScreen(
@@ -70,6 +72,8 @@ fun MarksScreen(
             loading = false
             return@LaunchedEffect
         }
+        // «Итоговые» грузятся своим эффектом (итоги + выбор года).
+        if (subjectId == null && mode == "final") return@LaunchedEffect
         loading = true
         error = null
         try {
@@ -144,6 +148,11 @@ fun MarksScreen(
                     onClick = { mode = "subject" },
                     label = { Text("По предмету") }
                 )
+                FilterChip(
+                    selected = mode == "final",
+                    onClick = { mode = "final" },
+                    label = { Text("Итоговые") }
+                )
             }
             Spacer(Modifier.height(4.dp))
         }
@@ -158,6 +167,14 @@ fun MarksScreen(
                     }
                 }
             }
+            mode == "final" -> FinalMarksSection(
+                years = academicYears,
+                selectedYearId = selectedYearId,
+                onYearChange = { selectedYearId = it },
+                marks = finalMarks,
+                loading = finalLoading,
+                error = finalError
+            )
             loading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
@@ -170,8 +187,7 @@ fun MarksScreen(
             }
             subjectId != null -> {
                 val subject = subjects.firstOrNull { it.optString("subjectId") == subjectId }
-                val finalMark = finalMarks.firstOrNull { it.optString("subjectId") == subjectId }
-                SubjectMarksDetail(subject, finalMark)
+                SubjectMarksDetail(subject)
             }
             mode == "subject" -> {
                 if (subjects.isEmpty()) {
@@ -180,17 +196,6 @@ fun MarksScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f)) {
-                        item {
-                            FinalMarksSection(
-                                years = academicYears,
-                                selectedYearId = selectedYearId,
-                                onYearChange = { selectedYearId = it },
-                                marks = finalMarks,
-                                loading = finalLoading,
-                                error = finalError
-                            )
-                            Spacer(Modifier.height(6.dp))
-                        }
                         items(subjects) { subject ->
                             SubjectMarksCard(subject) {
                                 val id = subject.optString("subjectId")
@@ -201,18 +206,7 @@ fun MarksScreen(
                     }
                 }
             }
-            else -> {
-                DateMarksList(marks, from, to, Modifier.weight(1f)) {
-                    FinalMarksSection(
-                        years = academicYears,
-                        selectedYearId = selectedYearId,
-                        onYearChange = { selectedYearId = it },
-                        marks = finalMarks,
-                        loading = finalLoading,
-                        error = finalError
-                    )
-                }
-            }
+            else -> DateMarksList(marks, from, to, Modifier.weight(1f))
         }
     }
 }
@@ -222,8 +216,7 @@ private fun DateMarksList(
     marks: List<JSONObject>,
     from: String,
     to: String,
-    modifier: Modifier = Modifier,
-    finalSection: @Composable () -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     val grouped = remember(marks) {
         marks.groupBy { it.optString("date") }.entries.sortedByDescending { it.key }
@@ -242,10 +235,6 @@ private fun DateMarksList(
                 MarksCharts(marks)
                 Spacer(Modifier.height(6.dp))
             }
-        }
-        item {
-            finalSection()
-            Spacer(Modifier.height(4.dp))
         }
         if (marks.isEmpty()) {
             item {
@@ -452,6 +441,9 @@ private fun ChartEmpty(text: String) {
 
 // ----------------------------------------------------------- итоговые оценки --
 
+/** Ширина колонки с отметкой в таблице итоговых оценок. */
+private val MARK_COLUMN_WIDTH = 40.dp
+
 @Composable
 private fun FinalMarksSection(
     years: List<JSONObject>,
@@ -463,111 +455,195 @@ private fun FinalMarksSection(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val selectedYear = years.firstOrNull { it.optString("id") == selectedYearId }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Итоговые оценки",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "Годовые и по учебным периодам",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Box {
-                    OutlinedButton(onClick = { menuOpen = true }, enabled = years.isNotEmpty()) {
-                        Text(
-                            selectedYear?.optString("name")?.takeIf { it.isNotBlank() } ?: "Учебный год",
-                            maxLines = 1
-                        )
-                        Text(" ▾")
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        years.forEach { year ->
-                            val name = year.optString("name").ifBlank { year.optString("id") }
-                            DropdownMenuItem(
-                                text = {
-                                    Text(if (year.optBoolean("currentYear")) "$name · текущий" else name)
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    onYearChange(year.optString("id"))
-                                }
-                            )
-                        }
-                    }
-                }
+    // В выпадающем списке сначала текущий год, затем остальные от новых к старым,
+    // чтобы текущий год не прятался в конце длинного списка.
+    val orderedYears = remember(years) {
+        years.sortedWith(
+            compareByDescending<JSONObject> { it.optBoolean("currentYear") }
+                .thenByDescending { it.optString("beginDate") }
+        )
+    }
+
+    // Колонки — только те периоды, по которым реально пришли отметки (в порядке API).
+    val periodColumns = remember(marks) {
+        val order = LinkedHashMap<String, String>()
+        marks.forEach { subject ->
+            subject.periods().forEach { period ->
+                if (period.nullableDouble("value") == null) return@forEach
+                val key = period.optString("ordinal").ifBlank { period.optString("name") }
+                if (key.isNotBlank()) order.getOrPut(key) { periodColumnLabel(period) }
             }
-            Spacer(Modifier.height(6.dp))
-            when {
-                loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        "Загружаем итоговые оценки...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                error != null -> Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                marks.isEmpty() -> Text(
-                    "Итоговых оценок за этот год нет",
-                    style = MaterialTheme.typography.bodySmall,
+        }
+        order
+    }
+    val hasYear = remember(marks) { marks.any { it.nullableDouble("yearMark") != null } }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Итоговые оценки",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "Четверти и годовая по предметам",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                else -> marks.forEach { subject -> FinalMarkRow(subject) }
             }
+            Box {
+                OutlinedButton(onClick = { menuOpen = true }, enabled = years.isNotEmpty()) {
+                    Text(
+                        selectedYear?.optString("name")?.takeIf { it.isNotBlank() } ?: "Учебный год",
+                        maxLines = 1
+                    )
+                    Text(" ▾")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    orderedYears.forEach { year ->
+                        val name = year.optString("name").ifBlank { year.optString("id") }
+                        DropdownMenuItem(
+                            text = { Text(if (year.optBoolean("currentYear")) "$name · текущий" else name) },
+                            onClick = {
+                                menuOpen = false
+                                onYearChange(year.optString("id"))
+                            }
+                        )
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        when {
+            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            error != null -> Text(
+                error,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error
+            )
+            marks.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    "Итоговых оценок за этот год нет",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            periodColumns.isEmpty() && !hasYear -> Box(
+                Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "За этот год итоговые оценки ещё не выставлены",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> FinalMarksTable(marks, periodColumns, hasYear)
+        }
+    }
+}
+
+/** Таблица: предметы по вертикали, периоды и годовая — по горизонтали. */
+@Composable
+private fun FinalMarksTable(
+    marks: List<JSONObject>,
+    periodColumns: Map<String, String>,
+    hasYear: Boolean
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Предмет",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                periodColumns.values.forEach { label ->
+                    Text(
+                        label,
+                        modifier = Modifier.width(MARK_COLUMN_WIDTH),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+                if (hasYear) {
+                    Text(
+                        "Год",
+                        modifier = Modifier.width(MARK_COLUMN_WIDTH),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                }
+            }
+            HorizontalDivider()
+        }
+        items(marks) { subject ->
+            val byKey = subject.periods().associateBy {
+                it.optString("ordinal").ifBlank { it.optString("name") }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    subject.optString("subjectName").ifBlank { "Предмет" },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                periodColumns.keys.forEach { key ->
+                    FinalMarkCell(byKey[key]?.nullableDouble("value"))
+                }
+                if (hasYear) FinalMarkCell(subject.nullableDouble("yearMark"))
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
     }
 }
 
 @Composable
-private fun FinalMarkRow(subject: JSONObject) {
-    val name = subject.optString("subjectName").ifBlank { "Предмет" }
-    val yearMark = subject.nullableDouble("yearMark")
-    val periods = subject.optJSONArray("periods")?.toObjectList().orEmpty()
-    val badgeValue = yearMark
-        ?: periods.lastOrNull { it.nullableDouble("value") != null }?.nullableDouble("value")
-    val periodText = periods
-        .mapNotNull { period ->
-            period.nullableDouble("value")?.let {
-                "${period.optString("name").ifBlank { "Период" }}: ${formatMark(it)}"
-            }
-        }
-        .joinToString(" · ")
-    val attestation = subject.nullableDouble("attestationMark")
-        ?.let { "Аттестация: ${formatMark(it)}" }
-    val subtitle = listOfNotNull(periodText.takeIf { it.isNotBlank() }, attestation).joinToString(" · ")
+private fun FinalMarkCell(value: Double?) {
+    Text(
+        formatMark(value),
+        modifier = Modifier.width(MARK_COLUMN_WIDTH),
+        textAlign = TextAlign.Center,
+        color = if (value == null) MaterialTheme.colorScheme.onSurfaceVariant else markColor(value),
+        fontWeight = if (value == null) FontWeight.Normal else FontWeight.Bold,
+        style = MaterialTheme.typography.titleSmall
+    )
+}
 
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            if (subtitle.isNotBlank()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-        Spacer(Modifier.width(10.dp))
-        GradeBadge(formatMark(badgeValue), badgeValue)
+/** Короткая подпись периода: «I», «II»… или сокращение названия. */
+private fun periodColumnLabel(period: JSONObject): String {
+    val ordinal = period.optString("ordinal").trim()
+    if (ordinal.isNotBlank()) return ordinal
+    val name = period.optString("name").trim()
+    return when {
+        name.startsWith("Первая", true) -> "I"
+        name.startsWith("Вторая", true) -> "II"
+        name.startsWith("Третья", true) -> "III"
+        name.startsWith("Четв", true) -> "IV"
+        else -> name.take(3)
     }
 }
+
+private fun JSONObject.periods(): List<JSONObject> =
+    optJSONArray("periods")?.toObjectList().orEmpty()
 
 // ------------------------------------------------------------------ предметы --
 
 @Composable
-private fun SubjectMarksDetail(subject: JSONObject?, finalMark: JSONObject? = null) {
+private fun SubjectMarksDetail(subject: JSONObject?) {
     if (subject == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Предмет не найден")
@@ -578,7 +654,7 @@ private fun SubjectMarksDetail(subject: JSONObject?, finalMark: JSONObject? = nu
         subject.optJSONArray("marks")?.toObjectList().orEmpty()
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        SubjectSummaryCard(subject, finalMark)
+        SubjectSummaryCard(subject)
         Spacer(Modifier.height(6.dp))
         if (subjectMarks.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -645,22 +721,12 @@ private fun SubjectMarksCard(subject: JSONObject, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SubjectSummaryCard(subject: JSONObject, finalMark: JSONObject? = null) {
+private fun SubjectSummaryCard(subject: JSONObject) {
     val name = subject.optString("subjectName").ifBlank { "Предмет" }
     val average = subject.nullableDouble("average")
     val subjectYear = subject.nullableDouble("yearMark")
     val count = subject.optJSONArray("marks")?.length() ?: 0
     val dynamic = subject.optString("dynamic")
-    val periods = finalMark?.optJSONArray("periods")?.toObjectList().orEmpty()
-    val finalValue = finalMark?.nullableDouble("yearMark")
-        ?: periods.lastOrNull { it.nullableDouble("value") != null }?.nullableDouble("value")
-    val periodText = periods
-        .mapNotNull { period ->
-            period.nullableDouble("value")?.let {
-                "${period.optString("name").ifBlank { "Период" }}: ${formatMark(it)}"
-            }
-        }
-        .joinToString(" · ")
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -669,16 +735,7 @@ private fun SubjectSummaryCard(subject: JSONObject, finalMark: JSONObject? = nul
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 SummaryStat("Средний", formatMark(average))
                 if (subjectYear != null) SummaryStat("Год", formatMark(subjectYear))
-                if (finalValue != null) SummaryStat("Итог", formatMark(finalValue))
                 SummaryStat("Оценок", count.toString())
-            }
-            if (periodText.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    periodText,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
             if (dynamic == "UP" || dynamic == "DOWN") {
                 Spacer(Modifier.height(4.dp))

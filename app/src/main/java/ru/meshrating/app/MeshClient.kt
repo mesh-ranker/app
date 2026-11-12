@@ -9,6 +9,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.net.UnknownHostException
 import java.io.InputStreamReader
+import java.util.Locale
 
 /**
  * HTTP-клиент МЭШ: таймауты, понятные ошибки и автоматическое обновление токена.
@@ -225,9 +226,16 @@ class MeshClient(
     fun getSubjectMarksDetailed(studentId: String?): JSONArray =
         MeshCore.normalizeSubjectMarks(getSubjectMarks(studentId))
 
-    /** Учебные годы для селектора итоговых оценок. */
-    fun getAcademicYears(): JSONArray =
-        MeshCore.normalizeAcademicYears(MeshCore.payloadList(request(MeshCore.Paths.ACADEMIC_YEARS)))
+    /** Кэш учебных годов: список статичен, повторно запрашиваем только при force. */
+    private var academicYearsCache: JSONArray? = null
+
+    /** Учебные годы для селектора итоговых оценок (ответ кэшируется на сессию). */
+    fun getAcademicYears(force: Boolean = false): JSONArray {
+        academicYearsCache?.takeIf { !force }?.let { return it }
+        val years = MeshCore.normalizeAcademicYears(MeshCore.payloadList(request(MeshCore.Paths.ACADEMIC_YEARS)))
+        academicYearsCache = years
+        return years
+    }
 
     /**
      * Итоговые оценки за учебный год.
@@ -255,6 +263,66 @@ class MeshClient(
         val json = request(MeshCore.Paths.HOMEWORKS, mapOf("student_id" to studentId, "from" to from, "to" to to))
         val list = MeshCore.payloadList(json)
         return (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let { item -> MeshCore.normalizeHomework(item) } }
+    }
+
+    /**
+     * Отметка домашнего задания «выполнено» (POST) или снятие отметки (DELETE).
+     *
+     * @param entryStudentId `homework_entry_student_id` из ответа ДЗ.
+     * @param type тип задания (`oo`, `dz`, …) — МЭШ ждёт его в query в верхнем регистре.
+     * @return true, если МЭШ подтвердил изменение.
+     */
+    fun setHomeworkDone(entryStudentId: String?, type: String?, done: Boolean): Boolean {
+        val entry = entryStudentId?.trim().orEmpty()
+        if (entry.isBlank()) throw MeshCore.MeshError("Не указано домашнее задание", "bad-homework")
+        val kind = type?.trim().takeUnless { it.isNullOrBlank() }?.uppercase(Locale.US) ?: "OO"
+        val url = buildUrl(MeshCore.Paths.homeworkDone(entry), mapOf("type" to kind))
+        var attempt = 0
+        val maxAttempts = if (autoRefresh) 2 else 1
+        while (attempt < maxAttempts) {
+            attempt++
+            val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = if (done) "POST" else "DELETE"
+                connectTimeout = timeoutMs
+                readTimeout = timeoutMs
+                // POST отправляем с пустым телом; DELETE — без тела (Content-Length: 0).
+                if (done) {
+                    doOutput = true
+                    setFixedLengthStreamingMode(0)
+                }
+                headers().forEach { (key, value) -> setRequestProperty(key, value) }
+            }
+            requestCount++
+            val status: Int
+            val body: String
+            try {
+                status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                body = stream?.let { BufferedReader(InputStreamReader(it, Charsets.UTF_8)).readText() } ?: ""
+            } catch (error: SocketTimeoutException) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Таймаут запроса к МЭШ", "timeout", 0, error)
+            } catch (error: UnknownHostException) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Нет связи с school.mos.ru", "network", 0, error)
+            } catch (error: Exception) {
+                connection.disconnect()
+                throw MeshCore.MeshError("Ошибка сети: ${error.message}", "network", 0, error)
+            } finally {
+                connection.disconnect()
+            }
+            when {
+                status == 401 && attempt < maxAttempts -> {
+                    if (refreshToken() != null) continue
+                    throw MeshCore.MeshError("Токен истёк, обновить не удалось", "unauthorized", 401)
+                }
+                status == 401 -> throw MeshCore.MeshError("Не авторизован (401)", "unauthorized", 401)
+                status !in 200..299 -> throw MeshCore.MeshError("Не удалось отметить ДЗ: HTTP $status", "http-$status", status)
+            }
+            val json = runCatching { JSONObject(body) }.getOrNull()
+            return json?.optBoolean("success", true) ?: true
+        }
+        throw MeshCore.MeshError("Не удалось отметить ДЗ", "exhausted")
     }
 
     /**

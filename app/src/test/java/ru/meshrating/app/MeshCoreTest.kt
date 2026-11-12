@@ -191,13 +191,20 @@ class MeshCoreTest {
         val homework = MeshCore.normalizeHomework(
             JSONObject(
                 """{"homework_entry_student_id": "h1", "homework_entry_id": 42,
-                    "subject_name": "История", "description": "Параграф 12",
+                    "type": "oo", "subject_name": "История", "description": "Параграф 12",
                     "date_assigned_on": "2026-10-06", "is_done": true}"""
             )
         )
         assertEquals("h1", homework.getString("id"))
         assertEquals("42", homework.getString("homeworkEntryId"))
         assertTrue(homework.getBoolean("isDone"))
+        // id из URL отметки «выполнено» и тип задания в верхнем регистре.
+        assertEquals("h1", homework.getString("entryStudentId"))
+        assertEquals("OO", homework.getString("entryType"))
+        assertEquals(
+            "/api/family/web/v1/homeworks/h1/done",
+            MeshCore.Paths.homeworkDone(homework.getString("entryStudentId"))
+        )
 
         val lessons = MeshCore.normalizeSchedule(
             JSONObject(
