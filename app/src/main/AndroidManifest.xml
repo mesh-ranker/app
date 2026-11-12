@@ -29,13 +29,6 @@
             </intent-filter>
         </activity>
 
-        <!-- WebView-версия (полный функционал) -->
-        <activity
-            android:name=".WebViewActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
-            android:exported="false"
-            android:windowSoftInputMode="adjustResize" />
-
         <!-- Окно входа в МЭШ: перехватывает токен автоматически -->
         <activity
             android:name=".MeshLoginActivity"

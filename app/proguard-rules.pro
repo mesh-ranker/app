@@ -1,13 +1,9 @@
 # Mesh Ranker — правила ProGuard/R8 для релизной сборки
 
 # Классы, к которым обращаются по имени из WebView (@JavascriptInterface)
--keepclassmembers class ru.meshrating.app.MeshAndroidBridge {
-    @android.webkit.JavascriptInterface <methods>;
-}
 -keepclassmembers class ru.meshrating.app.MeshLoginActivity$LoginBridge {
     @android.webkit.JavascriptInterface <methods>;
 }
--keep class ru.meshrating.app.MeshAndroidBridge { *; }
 
 # Ядро и клиент работают с org.json по строковым ключам — сужаем оптимизации
 -keep class ru.meshrating.app.MeshCore { *; }

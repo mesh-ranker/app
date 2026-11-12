@@ -12,9 +12,7 @@ import java.util.Locale
  *
  * Файл намеренно не зависит от классов Android: только org.json и java.*.
  * Благодаря этому его можно проверять обычными JVM-тестами (app/src/test)
- * без эмулятора, а поведение совпадает с desktop/web-версией
- * (shared/core/mesh-core.js) — обе реализации следуют одному контракту
- * (docs/API-CONTRACT.md).
+ * без эмулятора.
  */
 object MeshCore {
 
@@ -463,7 +461,6 @@ object MeshCore {
 
     /**
      * Таблица рейтинга класса: имена, место, «это я», дельты.
-     * Соответствует shared/core/mesh-core.js → buildRankTable.
      */
     fun buildRankTable(
         members: JSONArray,

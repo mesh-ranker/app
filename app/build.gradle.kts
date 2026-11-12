@@ -37,8 +37,6 @@ android {
         versionCode = buildVersionCode
         versionName = buildVersionName
 
-        // Интерфейс и ядро лежат в общем каталоге репозитория (shared/ui, shared/core)
-        // и копируются в assets скриптом android/tools/sync-ui.sh
         resourceConfigurations += listOf("ru", "en")
     }
 
@@ -88,7 +86,6 @@ android {
     }
 
     buildFeatures {
-        viewBinding = true
         compose = true
     }
 
@@ -99,32 +96,6 @@ android {
     packaging {
         resources.excludes += setOf("META-INF/*.kotlin_module")
     }
-}
-
-/**
- * Интерфейс и ядро живут в общем каталоге репозитория (shared/ui, shared/core),
- * поэтому перед сборкой копируем их в assets приложения. Так одна и та же
- * вёрстка работает и в Electron, и в Android WebView.
- */
-val syncSharedUi by tasks.registering(Sync::class) {
-    description = "Копирует shared/ui и shared/core в assets приложения"
-    into(layout.projectDirectory.dir("src/main/assets"))
-    from(rootProject.layout.projectDirectory.dir("shared/ui")) {
-        into("ui")
-    }
-    from(rootProject.layout.projectDirectory.dir("shared/core")) {
-        into("core")
-    }
-    doFirst {
-        logger.lifecycle("Синхронизация shared/ui → app/src/main/assets/ui")
-    }
-}
-
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
-    dependsOn(syncSharedUi)
-}
-tasks.named("preBuild") {
-    dependsOn(syncSharedUi)
 }
 
 dependencies {
