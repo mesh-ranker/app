@@ -282,34 +282,43 @@ private fun HomeworkCard(
                             .ifBlank { material.optString("uuid") }
                             .trim()
                         val canOpen = url.isNotBlank() || materialId.isNotBlank()
-                        val kind = listOf(material.optString("typeName"), material.optString("actionName"))
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · ")
+                        val action = material.optString("actionName").trim()
+                        val typeLabel = material.optString("typeName").trim()
                         val opening = launchingMaterialId != null && launchingMaterialId == materialId
-                        Text(
-                            "• $title",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                            modifier = if (canOpen) {
-                                Modifier.clickable { onOpenMaterial(homeworkEntryId, material) }
-                            } else {
-                                Modifier
-                            }
-                        )
-                        val subline = when {
-                            opening -> "Открываем…"
-                            kind.isNotBlank() && canOpen -> "$kind · нажмите, чтобы открыть"
-                            kind.isNotBlank() -> kind
-                            canOpen -> "Нажмите, чтобы открыть"
-                            else -> ""
-                        }
-                        if (subline.isNotBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (canOpen) {
+                                        Modifier.clickable { onOpenMaterial(homeworkEntryId, material) }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                                .padding(vertical = 4.dp)
+                        ) {
                             Text(
-                                subline,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 10.dp)
+                                "• $title",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                             )
+                            val subline = when {
+                                opening -> "Открываем…"
+                                action.isNotBlank() && canOpen -> "$action · нажмите, чтобы открыть"
+                                action.isNotBlank() -> action
+                                typeLabel.isNotBlank() && canOpen -> "$typeLabel · нажмите, чтобы открыть"
+                                typeLabel.isNotBlank() -> typeLabel
+                                canOpen -> "Нажмите, чтобы открыть"
+                                else -> ""
+                            }
+                            if (subline.isNotBlank()) {
+                                Text(
+                                    subline,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (canOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 10.dp)
+                                )
+                            }
                         }
                     }
                 }

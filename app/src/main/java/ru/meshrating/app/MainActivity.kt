@@ -1,10 +1,13 @@
 package ru.meshrating.app
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -311,6 +314,14 @@ fun MainScaffold(
 @Composable
 fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
     var tokenInput by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val url = MeshCore.loginUrl()
+    val webLogin = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val token = result.data?.getStringExtra(MeshLoginActivity.EXTRA_TOKEN)
+            if (!token.isNullOrBlank()) onLogin(token)
+        }
+    }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -318,18 +329,27 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
     ) {
         Text("Вход в МЭШ", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.height(8.dp))
-        val context = LocalContext.current
-        val url = MeshCore.loginUrl()
+
         Text(
-            text = "1. Откройте: $url",
+            "Способ 1. Вставить токен вручную",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Откройте: $url",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.clickable {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
             }
         )
-        Text("2. Скопируйте токен и вставьте сюда", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
+        Text(
+            "Скопируйте токен со страницы и вставьте сюда",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(12.dp))
         OutlinedTextField(
             value = tokenInput,
             onValueChange = { tokenInput = it },
@@ -337,17 +357,44 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
             modifier = Modifier.fillMaxWidth(),
             minLines = 3
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Button(
             onClick = { onLogin(tokenInput) },
             enabled = !loading && tokenInput.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
         ) {
             if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp))
-            else Text("Войти")
+            else Text("Войти с токеном")
         }
+
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "Способ 2. Войти через сайт МЭШ",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Откроется school.mos.ru. После входа приложение перехватит Authorization-токен и само закроет окно.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = {
+                webLogin.launch(
+                    Intent(context, MeshLoginActivity::class.java)
+                        .putExtra(MeshLoginActivity.EXTRA_START_URL, MeshCore.HOST)
+                )
+            },
+            enabled = !loading,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Открыть school.mos.ru")
+        }
+
         error?.let {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
         }
     }

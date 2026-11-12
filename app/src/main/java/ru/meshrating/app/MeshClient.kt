@@ -258,11 +258,10 @@ class MeshClient(
             try {
                 status = connection.responseCode
                 location = connection.getHeaderField("Location")
-                val stream = when {
-                    status in 200..299 -> connection.inputStream
-                    status >= 400 -> connection.errorStream
-                    else -> null
-                }
+                // МЭШ отвечает 302, но ссылку кладёт в ТЕЛО ответа, а не в Location.
+                // Поэтому читаем body и для 3xx, а не только для 2xx.
+                val stream = runCatching { connection.inputStream }.getOrNull()
+                    ?: connection.errorStream
                 body = stream?.let { BufferedReader(InputStreamReader(it, Charsets.UTF_8)).readText() } ?: ""
             } catch (error: SocketTimeoutException) {
                 connection.disconnect()
