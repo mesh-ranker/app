@@ -526,6 +526,9 @@ fun LoginScreen(onLogin: (String) -> Unit, loading: Boolean, error: String?) {
             Text("Открыть school.mos.ru")
         }
 
+        Spacer(Modifier.height(24.dp))
+        QrLoginPanel(onLogin = onLogin)
+
         error?.let {
             Spacer(Modifier.height(12.dp))
             Text(it, color = MaterialTheme.colorScheme.error)
