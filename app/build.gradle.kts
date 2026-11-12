@@ -14,6 +14,18 @@ val buildVersionName = providers.environmentVariable("VERSION_NAME").orNull
     ?.takeIf { it.isNotBlank() }
     ?: "1.0.0"
 
+// Постоянная release-подпись из GitHub Actions secrets.
+val signingStorePath = providers.environmentVariable("ANDROID_KEYSTORE_PATH").orNull
+val signingStorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val signingKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val signingKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val hasEnvironmentSigning = listOf(
+    signingStorePath,
+    signingStorePassword,
+    signingKeyAlias,
+    signingKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "ru.meshrating.app"
     compileSdk = 35
@@ -30,22 +42,35 @@ android {
         resourceConfigurations += listOf("ru", "en")
     }
 
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Подпись релиза берётся из keystore.properties (в репозитории его нет)
+    signingConfigs {
+        if (hasEnvironmentSigning) {
+            create("release") {
+                storeFile = file(signingStorePath!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        } else {
+            // Локальная подпись: keystore.properties (файл не хранится в репозитории).
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
                 val props = Properties().apply { keystorePropsFile.inputStream().use { load(it) } }
-                signingConfig = signingConfigs.create("release") {
+                create("release") {
                     storeFile = file(props.getProperty("storeFile"))
                     storePassword = props.getProperty("storePassword")
                     keyAlias = props.getProperty("keyAlias")
                     keyPassword = props.getProperty("keyPassword")
                 }
             }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
         debug {
             applicationIdSuffix = ".debug"

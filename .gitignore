@@ -1,0 +1,4 @@
+# Release signing secrets (keystore and passwords are never committed)
+keystore.properties
+*.jks
+*.keystore
