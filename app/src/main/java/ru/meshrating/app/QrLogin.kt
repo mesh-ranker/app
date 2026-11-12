@@ -42,7 +42,7 @@ private const val CLIENT_ID = "dnevnik.mos.ru"
 private const val SCOPE =
     "openid profile birthday contacts snils blitz_user_rights blitz_change_password offline_access"
 private const val UA =
-    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36"
+    "Mozilla/5.0 (X11; Linux x86_64; rv:159.0) Gecko/20100101 Firefox/159.0"
 
 private const val HTML_ACCEPT =
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -104,6 +104,7 @@ private class QrLoginClient {
             useCaches = false
             runCatching { setRequestProperty("User-Agent", UA) }
             runCatching { setRequestProperty("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7") }
+            runCatching { setRequestProperty("Sec-GPC", "1") }
             if (cookies.isNotEmpty()) runCatching { setRequestProperty("Cookie", cookieHeader()) }
         }
         for ((key, value) in headers) {
@@ -303,6 +304,7 @@ private class QrLoginClient {
         var lastLink = ""
         var lastRefresh = 0L
         var failures = 0
+        var unexpected = 0
         while (System.currentTimeMillis() < deadline) {
             val started = System.currentTimeMillis()
             val data = withContext(Dispatchers.IO) { runCatching { pull(pageUrl) }.getOrNull() }
@@ -316,6 +318,17 @@ private class QrLoginClient {
             }
             if (data != null) {
                 val command = data.optString("command")
+                val known = command == "showQRCode" || command == "askForConfirm" ||
+                    command == "needComplete" || command == "needRefresh"
+                if (!known) {
+                    unexpected++
+                    if (unexpected >= 5 && lastLink.isBlank()) {
+                        val reason = data.optString("inquire").ifBlank { command.ifBlank { "нет command" } }
+                        throw QrException("МЭШ не включил QR-вход (ответ: $reason). Попробуйте ещё раз.")
+                    }
+                } else {
+                    unexpected = 0
+                }
                 when (command) {
                     "showQRCode" -> {
                         val link = data.optString("link")
