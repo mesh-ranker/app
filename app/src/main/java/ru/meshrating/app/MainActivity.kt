@@ -19,11 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -282,10 +282,13 @@ fun BootErrorScreen(message: String, onRetry: () -> Unit, onLogout: () -> Unit) 
 /** Состояние экрана для истории кнопки/жеста «назад». */
 private data class NavState(
     val tab: String,
-    val subjectId: String?,
-    val target: HomeworkTarget?
+    val rankingSubjectId: String? = null,
+    val marksSubjectId: String? = null,
+    val marksSubjectName: String? = null,
+    val target: HomeworkTarget? = null
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScaffold(
     store: SessionStore,
@@ -297,48 +300,96 @@ fun MainScaffold(
 ) {
     var currentTab by remember { mutableStateOf("ranking") }
     var rankingSubjectId by remember { mutableStateOf<String?>(null) }
+    var marksSubjectId by remember { mutableStateOf<String?>(null) }
+    var marksSubjectName by remember { mutableStateOf<String?>(null) }
     var homeworkTarget by remember { mutableStateOf<HomeworkTarget?>(null) }
     val backStack = remember { mutableStateListOf<NavState>() }
 
-    fun navigateTo(tab: String, subjectId: String? = null, target: HomeworkTarget? = null) {
-        if (tab == currentTab && subjectId == rankingSubjectId && target == homeworkTarget) return
-        backStack.add(NavState(currentTab, rankingSubjectId, homeworkTarget))
-        currentTab = tab
-        rankingSubjectId = subjectId
-        homeworkTarget = target
+    fun currentState() = NavState(
+        tab = currentTab,
+        rankingSubjectId = rankingSubjectId,
+        marksSubjectId = marksSubjectId,
+        marksSubjectName = marksSubjectName,
+        target = homeworkTarget
+    )
+
+    fun navigateTo(next: NavState) {
+        if (next == currentState()) return
+        backStack.add(currentState())
+        currentTab = next.tab
+        rankingSubjectId = next.rankingSubjectId
+        marksSubjectId = next.marksSubjectId
+        marksSubjectName = next.marksSubjectName
+        homeworkTarget = next.target
     }
 
+    val hasContext = backStack.isNotEmpty() || rankingSubjectId != null ||
+        marksSubjectId != null || homeworkTarget != null
+
     // Жест/кнопка «назад» сначала проходят по истории экранов, а не сворачивают приложение.
-    BackHandler(enabled = backStack.isNotEmpty() || rankingSubjectId != null) {
+    BackHandler(enabled = hasContext) {
         if (backStack.isNotEmpty()) {
             val previous = backStack.removeAt(backStack.lastIndex)
             currentTab = previous.tab
-            rankingSubjectId = previous.subjectId
+            rankingSubjectId = previous.rankingSubjectId
+            marksSubjectId = previous.marksSubjectId
+            marksSubjectName = previous.marksSubjectName
             homeworkTarget = previous.target
         } else {
             rankingSubjectId = null
+            marksSubjectId = null
+            marksSubjectName = null
+            homeworkTarget = null
         }
     }
 
+    val screenTitle = when (currentTab) {
+        "ranking" -> "Рейтинг"
+        "marks" -> if (marksSubjectName.isNullOrBlank()) "Оценки" else "Оценки · $marksSubjectName"
+        "homeworks" -> "Домашние задания"
+        "schedule" -> "Расписание"
+        "settings" -> "Настройки"
+        else -> "МЭШ Рейтинг"
+    }
+
     Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(screenTitle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                },
+                actions = {
+                    if (currentTab == "marks" && marksSubjectId != null) {
+                        TextButton(
+                            onClick = {
+                                navigateTo(NavState(tab = "ranking", rankingSubjectId = marksSubjectId))
+                            }
+                        ) {
+                            Text("Рейтинг")
+                        }
+                    }
+                    IconButton(onClick = { navigateTo(NavState(tab = "settings")) }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = "Настройки и профиль"
+                        )
+                    }
+                }
+            )
+        },
         bottomBar = {
             NavigationBar {
-                val items = listOf("ranking" to "Рейтинг", "subjects" to "Предметы", "marks" to "Оценки", "homeworks" to "ДЗ", "schedule" to "Расписание", "profile" to "Профиль", "settings" to "Настройки")
+                val items = listOf(
+                    "ranking" to "Рейтинг",
+                    "marks" to "Оценки",
+                    "homeworks" to "ДЗ",
+                    "schedule" to "Расписание"
+                )
                 items.forEach { (key, label) ->
                     NavigationBarItem(
                         selected = currentTab == key,
-                        onClick = { navigateTo(key) },
-                        label = {
-                            Text(
-                                text = label,
-                                fontSize = 8.sp,
-                                lineHeight = 10.sp,
-                                letterSpacing = 0.sp,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
+                        onClick = { navigateTo(NavState(tab = key)) },
+                        label = { Text(label) },
                         icon = { }
                     )
                 }
@@ -355,15 +406,23 @@ fun MainScaffold(
                     selectedSubjectId = rankingSubjectId,
                     onSubjectChange = { rankingSubjectId = it }
                 )
-                "subjects" -> SubjectsScreen(
+                "marks" -> MarksScreen(
                     store,
                     client,
-                    personId,
-                    onOpenSubject = { id, _ ->
-                        if (id.isNotBlank()) navigateTo("ranking", subjectId = id)
+                    studentId,
+                    subjectId = marksSubjectId,
+                    onOpenSubject = { id, name ->
+                        if (id.isNotBlank()) {
+                            navigateTo(
+                                NavState(
+                                    tab = "marks",
+                                    marksSubjectId = id,
+                                    marksSubjectName = name
+                                )
+                            )
+                        }
                     }
                 )
-                "marks" -> MarksScreen(store, client, studentId)
                 "homeworks" -> HomeworksScreen(
                     store,
                     client,
@@ -375,9 +434,8 @@ fun MainScaffold(
                     store,
                     client,
                     studentId,
-                    onHomeworkClick = { navigateTo("homeworks", target = it) }
+                    onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) }
                 )
-                "profile" -> ProfileScreen(store, client, profile, onLogout)
                 "settings" -> SettingsScreen(store, client, profile, onLogout)
             }
         }

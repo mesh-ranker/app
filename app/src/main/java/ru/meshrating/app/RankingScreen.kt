@@ -66,9 +66,6 @@ fun RankingScreen(
     LaunchedEffect(personId, date, selectedSubject) { load() }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text("Рейтинг", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
-
         board?.optJSONObject("summary")?.let { s ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 KpiCard(

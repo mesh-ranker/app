@@ -51,8 +51,6 @@ fun ScheduleScreen(
     LaunchedEffect(studentId, selectedDate) { load() }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text("Расписание", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(4.dp))
         DaySelector(
             date = selectedDate,
             onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },

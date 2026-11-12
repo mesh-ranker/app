@@ -15,6 +15,25 @@ import org.json.JSONObject
 
 @Composable
 fun ProfileScreen(store: SessionStore, client: MeshClient, initialProfile: JSONObject?, onLogout: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text("Профиль", style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(8.dp))
+        ProfileBody(store, client, initialProfile)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Выйти") }
+    }
+}
+
+/** Общая часть профиля: используется и на экране «Профиль», и в объединённых настройках. */
+@Composable
+fun ProfileBody(
+    store: SessionStore,
+    client: MeshClient,
+    initialProfile: JSONObject?,
+    showToken: Boolean = true
+) {
     val scope = rememberCoroutineScope()
     var profile by remember(initialProfile) { mutableStateOf(initialProfile) }
     var loading by remember { mutableStateOf(initialProfile == null) }
@@ -43,14 +62,12 @@ fun ProfileScreen(store: SessionStore, client: MeshClient, initialProfile: JSONO
         }
     }
 
-    Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        Text("Профиль", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(8.dp))
-
+    Column(modifier = Modifier.fillMaxWidth()) {
         when {
-            loading -> Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
+            loading -> Box(
+                modifier = Modifier.fillMaxWidth().padding(24.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
                 CircularProgressIndicator()
             }
             error != null -> {
@@ -92,32 +109,31 @@ fun ProfileScreen(store: SessionStore, client: MeshClient, initialProfile: JSONO
                     if (phone.isNotBlank()) ProfileRow("Телефон", phone)
                 }
 
-                Spacer(Modifier.height(8.dp))
-                ProfileSection("Токен МЭШ") {
-                    val info = MeshCore.describeToken(store.token)
-                    ProfileRow("Маска", info.optString("mask").ifBlank { "—" })
-                    ProfileRow(
-                        "Тип",
-                        when (info.optString("kind")) {
-                            "jwt" -> "JWT"
-                            "opaque" -> "opaque"
-                            else -> "—"
-                        }
-                    )
-                    if (info.has("expiresAt")) {
-                        val expired = info.optBoolean("expired")
+                if (showToken) {
+                    Spacer(Modifier.height(8.dp))
+                    ProfileSection("Токен МЭШ") {
+                        val info = MeshCore.describeToken(store.token)
+                        ProfileRow("Маска", info.optString("mask").ifBlank { "—" })
                         ProfileRow(
-                            "Истекает",
-                            MeshCore.dateShort(
-                                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
-                                    .format(java.util.Date(info.optLong("expiresAt")))
-                            ) + if (expired) " (истёк)" else ""
+                            "Тип",
+                            when (info.optString("kind")) {
+                                "jwt" -> "JWT"
+                                "opaque" -> "opaque"
+                                else -> "—"
+                            }
                         )
+                        if (info.has("expiresAt")) {
+                            val expired = info.optBoolean("expired")
+                            ProfileRow(
+                                "Истекает",
+                                MeshCore.dateShort(
+                                    java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                                        .format(java.util.Date(info.optLong("expiresAt")))
+                                ) + if (expired) " (истёк)" else ""
+                            )
+                        }
                     }
                 }
-
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onLogout, modifier = Modifier.fillMaxWidth()) { Text("Выйти") }
             }
         }
     }

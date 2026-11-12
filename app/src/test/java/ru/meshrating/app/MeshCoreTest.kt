@@ -250,4 +250,56 @@ class MeshCoreTest {
         assertTrue(MeshCore.describeError(MeshCore.MeshError("x", "http-503", 503)).contains("503"))
         assertNotNull(MeshCore.describeError(RuntimeException("что-то пошло не так")))
     }
+
+    @Test
+    fun `subject_marks нормализует периоды и оценки`() {
+        val raw = JSONArray(
+            """[
+              {
+                "subject_id": 123,
+                "subject_name": "Алгебра",
+                "average": "4.50",
+                "year_mark": "5",
+                "dynamic": "UP",
+                "periods": [
+                  {
+                    "title": "Первая четверть",
+                    "start": "01.09",
+                    "end": "23.10",
+                    "value": "4.82",
+                    "marks": [
+                      {"id": 1, "value": "5", "control_form_name": "Устный ответ", "date": "2026-09-01", "comment": ""},
+                      {"id": 2, "value": "4", "control_form_name": "Тест", "date": "2026-09-05", "comment": "Молодец"}
+                    ]
+                  }
+                ]
+              }
+            ]"""
+        )
+
+        val subjects = MeshCore.normalizeSubjectMarks(raw)
+        assertEquals(1, subjects.length())
+        val subject = subjects.getJSONObject(0)
+        assertEquals("123", subject.getString("subjectId"))
+        assertEquals("Алгебра", subject.getString("subjectName"))
+        assertEquals(4.5, subject.getDouble("average"), 0.001)
+        assertEquals(5.0, subject.getDouble("yearMark"), 0.001)
+        assertEquals(1, subject.getJSONArray("periods").length())
+
+        val marks = subject.getJSONArray("marks")
+        assertEquals(2, marks.length())
+        assertEquals("2026-09-05", marks.getJSONObject(0).getString("date"))
+        assertEquals("5", marks.getJSONObject(1).getString("markText"))
+    }
+
+    @Test
+    fun `subject_marks понимает плоский список чисел`() {
+        val raw = JSONArray(
+            """[{"subject_id": 7, "subject_name": "Физика", "marks": [5, 4, 3], "average": 4.0, "final_mark": 4}]"""
+        )
+
+        val subject = MeshCore.normalizeSubjectMarks(raw).getJSONObject(0)
+        assertEquals(3, subject.getJSONArray("marks").length())
+        assertEquals(4.0, subject.getDouble("yearMark"), 0.001)
+    }
 }

@@ -538,6 +538,114 @@ object MeshCore {
         .put("comment", asString(mark.opt("comment")))
         .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
 
+    /**
+     * Нормализует ответ `/api/family/web/v1/subject_marks`.
+     *
+     * Реальный МЭШ отдаёт по предмету: `subject_id`, `subject_name`, `average`,
+     * `average_by_all`, `year_mark`, `dynamic` и `periods[]`, внутри которых
+     * лежат четвертные оценки и список оценок `marks[]`.
+     */
+    fun normalizeSubjectMarks(items: JSONArray): JSONArray {
+        val result = JSONArray()
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val subjectId = asString(firstDefined(item.opt("subject_id"), item.opt("subjectId")))
+            val subjectName = asString(firstDefined(item.opt("subject_name"), item.opt("subjectName"), "—"))
+            val periods = JSONArray()
+            val allMarks = mutableListOf<JSONObject>()
+
+            val rawPeriods = item.optJSONArray("periods") ?: JSONArray()
+            for (p in 0 until rawPeriods.length()) {
+                val period = rawPeriods.optJSONObject(p) ?: continue
+                val periodMarks = JSONArray()
+                val rawMarks = period.optJSONArray("marks") ?: JSONArray()
+                for (m in 0 until rawMarks.length()) {
+                    val mark = rawMarks.optJSONObject(m) ?: continue
+                    val normalized = normalizeMark(mark)
+                    periodMarks.put(normalized)
+                    allMarks.add(normalized)
+                }
+                periods.put(
+                    JSONObject()
+                        .put("title", asString(period.opt("title")))
+                        .put("start", asString(period.opt("start")))
+                        .put("end", asString(period.opt("end")))
+                        .put(
+                            "value",
+                            asNullableDouble(firstDefined(period.opt("value"), period.opt("fixed_value")))
+                                ?: JSONObject.NULL
+                        )
+                        .put("dynamic", asString(period.opt("dynamic")))
+                        .put("count", periodMarks.length())
+                        .put("marks", periodMarks)
+                )
+            }
+
+            // Демо-сервер и некоторые старые ответы кладут оценки прямо в `marks`
+            // (числами), без `periods`. Поддерживаем и такой вариант.
+            if (allMarks.isEmpty()) {
+                val rawTopMarks = item.optJSONArray("marks") ?: JSONArray()
+                for (m in 0 until rawTopMarks.length()) {
+                    when (val raw = rawTopMarks.opt(m)) {
+                        is JSONObject -> {
+                            val normalized = normalizeMark(raw)
+                            if (normalized.optString("subjectId").isBlank()) {
+                                normalized.put("subjectId", subjectId)
+                            }
+                            if (normalized.optString("subjectName").isBlank() ||
+                                normalized.optString("subjectName") == "—"
+                            ) {
+                                normalized.put("subjectName", subjectName)
+                            }
+                            allMarks.add(normalized)
+                        }
+                        else -> {
+                            val value = asNullableDouble(raw)
+                            if (value != null) {
+                                allMarks.add(
+                                    JSONObject()
+                                        .put("id", "$subjectId-$m")
+                                        .put("value", value)
+                                        .put("markText", asString(raw))
+                                        .put("subjectId", subjectId)
+                                        .put("subjectName", subjectName)
+                                        .put("controlForm", "—")
+                                        .put("weight", 1.0)
+                                        .put("date", today())
+                                        .put("comment", "")
+                                        .put("isExam", false)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            val sortedMarks = allMarks.sortedByDescending { it.optString("date") }
+            result.put(
+                JSONObject()
+                    .put("subjectId", subjectId)
+                    .put("subjectName", subjectName)
+                    .put("average", asNullableDouble(item.opt("average")) ?: JSONObject.NULL)
+                    .put("averageByAll", asNullableDouble(item.opt("average_by_all")) ?: JSONObject.NULL)
+                    .put(
+                        "yearMark",
+                        asNullableDouble(
+                            firstDefined(
+                                item.opt("year_mark"),
+                                item.opt("yearMark"),
+                                item.opt("final_mark")
+                            )
+                        ) ?: JSONObject.NULL
+                    )
+                    .put("dynamic", asString(item.opt("dynamic")))
+                    .put("periods", periods)
+                    .put("marks", JSONArray(sortedMarks))
+            )
+        }
+        return result
+    }
+
     /** Приводит относительную ссылку МЭШ к абсолютному URL. */
     fun absoluteUrl(raw: String?): String {
         val text = raw?.trim().orEmpty()

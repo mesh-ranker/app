@@ -24,7 +24,7 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Text("Настройки", style = MaterialTheme.typography.headlineMedium)
+        ProfileBody(store, client, profile, showToken = false)
         Spacer(Modifier.height(8.dp))
 
         Card(modifier = Modifier.fillMaxWidth()) {

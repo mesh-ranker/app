@@ -221,6 +221,10 @@ class MeshClient(
     fun getSubjectMarks(studentId: String?): JSONArray =
         MeshCore.payloadList(request(MeshCore.Paths.SUBJECT_MARKS, mapOf("student_id" to studentId)))
 
+    /** `subject_marks` с нормализованными предметами, периодами и оценками. */
+    fun getSubjectMarksDetailed(studentId: String?): JSONArray =
+        MeshCore.normalizeSubjectMarks(getSubjectMarks(studentId))
+
     fun getHomeworks(studentId: String?, from: String, to: String): List<JSONObject> {
         val json = request(MeshCore.Paths.HOMEWORKS, mapOf("student_id" to studentId, "from" to from, "to" to to))
         val list = MeshCore.payloadList(json)

@@ -92,6 +92,10 @@ class MeshClientTest {
 
         val subjectMarks = client.getSubjectMarks("17234613")
         assertEquals(14, subjectMarks.length())
+
+        val detailed = client.getSubjectMarksDetailed("17234613")
+        assertEquals(14, detailed.length())
+        assertTrue(detailed.getJSONObject(0).has("subjectName"))
     }
 
     @Test
