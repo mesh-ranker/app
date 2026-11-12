@@ -338,6 +338,18 @@ object MeshCore {
             .filter { it.isNotEmpty() }
             .joinToString(" ")
 
+    /** Телефон вида 9771429362 / 79771429362 -> +7 (977) 142-93-62. */
+    fun formatPhone(raw: String?): String {
+        val digits = raw.orEmpty().filter { it.isDigit() }
+        return when {
+            digits.length == 11 && (digits[0] == '7' || digits[0] == '8') ->
+                "+7 (${digits.substring(1, 4)}) ${digits.substring(4, 7)}-${digits.substring(7, 9)}-${digits.substring(9, 11)}"
+            digits.length == 10 ->
+                "+7 (${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6, 8)}-${digits.substring(8, 10)}"
+            else -> raw.orEmpty()
+        }
+    }
+
     fun payloadList(json: JSONObject?): JSONArray = when {
         json == null -> JSONArray()
         json.optJSONArray("payload") != null -> json.optJSONArray("payload")!!
@@ -381,6 +393,8 @@ object MeshCore {
             .put("schoolId", asString(firstDefined(child.opt("school_id"), child.opt("schoolId"), school?.opt("id"))))
             .put("schoolName", schoolName)
             .put("schoolShort", schoolShort)
+            .put("email", asString(child.opt("email")))
+            .put("phone", asString(firstDefined(child.opt("phone"), child.opt("mobile_phone"))))
             .put("avatarUrl", asString(firstDefined(child.opt("avatar_url"), child.opt("avatarUrl"))))
     }
 
@@ -392,18 +406,37 @@ object MeshCore {
         for (i in 0 until childrenArray.length()) {
             childrenArray.optJSONObject(i)?.let { children.put(normalizeChild(it)) }
         }
+        // Родитель лежит в ответе /api/family/web/v1/profile под
+        // children[].representatives[]. Ключ "profile" в ответе МЭШ — это сам
+        // ученик, поэтому он используется только как запасной вариант.
+        val representative = childrenArray.optJSONObject(0)
+            ?.optJSONArray("representatives")
+            ?.optJSONObject(0)
+            ?: profile
+        val repFirst = asString(representative.opt("first_name"))
+        val repMiddle = asString(representative.opt("middle_name"))
         val parent = JSONObject()
-            .put("id", asString(firstDefined(profile.opt("id"), profile.opt("user_id"))))
+            .put(
+                "id",
+                asString(
+                    firstDefined(
+                        representative.opt("person_id"),
+                        representative.opt("id"),
+                        representative.opt("user_id")
+                    )
+                )
+            )
             .put(
                 "name",
                 personName(
-                    asString(profile.opt("last_name")),
-                    asString(profile.opt("first_name")),
-                    asString(profile.opt("middle_name"))
+                    asString(representative.opt("last_name")),
+                    repFirst,
+                    if (repMiddle.isNotBlank() && repFirst.contains(repMiddle, ignoreCase = true)) "" else repMiddle
                 ).ifBlank { "Родитель" }
             )
-            .put("email", asString(profile.opt("email")))
-            .put("phone", asString(firstDefined(profile.opt("phone"), profile.opt("mobile_phone"))))
+            .put("type", asString(representative.opt("type")))
+            .put("email", asString(representative.opt("email")))
+            .put("phone", asString(firstDefined(representative.opt("phone"), representative.opt("mobile_phone"))))
         return JSONObject()
             .put("parent", parent)
             .put("children", children)

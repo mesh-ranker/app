@@ -89,6 +89,10 @@ fun ProfileBody(
                         child?.optString("schoolShort").orEmpty()
                     }
                     ProfileRow("Школа", school.ifBlank { "—" })
+                    val studentEmail = child?.optString("email").orEmpty()
+                    val studentPhone = MeshCore.formatPhone(child?.optString("phone"))
+                    if (studentEmail.isNotBlank()) ProfileRow("Email", studentEmail)
+                    if (studentPhone.isNotBlank()) ProfileRow("Телефон", studentPhone)
                 }
 
                 if (children.size > 1) {
@@ -104,7 +108,7 @@ fun ProfileBody(
                 ProfileSection("Родитель") {
                     ProfileRow("ФИО", parent?.optString("name").orEmpty().ifBlank { "—" })
                     val email = parent?.optString("email").orEmpty()
-                    val phone = parent?.optString("phone").orEmpty()
+                    val phone = MeshCore.formatPhone(parent?.optString("phone"))
                     if (email.isNotBlank()) ProfileRow("Email", email)
                     if (phone.isNotBlank()) ProfileRow("Телефон", phone)
                 }

@@ -69,6 +69,41 @@ class MeshCoreTest {
     }
 
     @Test
+    fun `normalizeProfile берёт родителя из representatives и контакты ученика`() {
+        val profile = MeshCore.normalizeProfile(
+            JSONObject(
+                """{
+                  "profile": {"id": 1, "last_name": "Демидова", "first_name": "Ольга", "middle_name": "Сергеевна"},
+                  "children": [
+                    {"id": 42, "contingent_guid": "${DemoMeshServer.UUID_ME}", "last_name": "Демидов", "first_name": "Пётр", "class_name": "7 «Б»",
+                     "email": "petr@example.ru", "phone": "9771429362",
+                     "representatives": [
+                       {"person_id": "rep-1", "last_name": "Демидова", "first_name": "Ольга", "middle_name": "Сергеевна", "type": "Родитель", "email": "olga@example.ru", "phone": "9299013256"}
+                     ]}
+                  ]
+                }"""
+            )
+        )
+        val parent = profile.getJSONObject("parent")
+        assertEquals("Демидова Ольга Сергеевна", parent.getString("name"))
+        assertEquals("rep-1", parent.getString("id"))
+        assertEquals("Родитель", parent.getString("type"))
+        assertEquals("olga@example.ru", parent.getString("email"))
+        assertEquals("9299013256", parent.getString("phone"))
+        val child = profile.getJSONArray("children").getJSONObject(0)
+        assertEquals("petr@example.ru", child.getString("email"))
+        assertEquals("9771429362", child.getString("phone"))
+    }
+
+    @Test
+    fun `formatPhone приводит телефон к виду +7`() {
+        assertEquals("+7 (977) 142-93-62", MeshCore.formatPhone("9771429362"))
+        assertEquals("+7 (977) 142-93-62", MeshCore.formatPhone("79771429362"))
+        assertEquals("+7 (977) 142-93-62", MeshCore.formatPhone("89771429362"))
+        assertEquals("", MeshCore.formatPhone(null))
+    }
+
+    @Test
     fun `buildRankTable считает места, дельты и флаг это я`() {
         val members = JSONArray(
             """[
