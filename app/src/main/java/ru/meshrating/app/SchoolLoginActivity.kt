@@ -10,6 +10,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.google.android.material.appbar.MaterialToolbar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -39,7 +40,8 @@ class SchoolLoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_login)
+        setContentView(R.layout.activity_school_login)
+        setSupportActionBar(findViewById<MaterialToolbar>(R.id.toolbar))
         supportActionBar?.apply {
             setDisplayHomeAsUpEnabled(true)
             title = getString(R.string.login_title)

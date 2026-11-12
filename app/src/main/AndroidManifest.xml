@@ -48,7 +48,7 @@
             android:name=".SchoolLoginActivity"
             android:exported="false"
             android:label="@string/login_title"
-            android:theme="@style/Theme.MeshRanker.Login"
+            android:theme="@style/Theme.MeshRanker"
             android:windowSoftInputMode="adjustResize" />
     </application>
 </manifest>
