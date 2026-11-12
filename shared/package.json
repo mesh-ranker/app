@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "commonjs",
+  "scripts": {
+    "test": "node --test core/test/*.test.js"
+  },
   "description": "Общее ядро и UI для desktop (Electron) и Android (Kotlin/WebView) версий Mesh Ranker",
   "license": "MIT"
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Mesh Ranker — рейтинг класса МЭШ</title>
+  <title>МЭШ — оценки и рейтинг класса</title>
   <link href="vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
   <link href="vendor/bootstrap-icons/bootstrap-icons.min.css" rel="stylesheet">
   <link href="css/app.css" rel="stylesheet">
@@ -14,13 +14,15 @@
   <div id="app" class="d-none">
     <nav class="navbar navbar-expand-lg border-bottom bg-body-tertiary sticky-top">
       <div class="container-fluid">
-        <span class="navbar-brand mb-0 h1"><i class="bi bi-bar-chart-line"></i> Mesh Ranker</span>
+        <span class="navbar-brand mb-0 h1"><i class="bi bi-bar-chart-line"></i> МЭШ: оценки и рейтинг</span>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navCollapse"><span class="navbar-toggler-icon"></span></button>
         <div class="collapse navbar-collapse" id="navCollapse">
           <ul class="navbar-nav me-auto" id="nav"></ul>
           <div class="d-flex align-items-center gap-2">
             <span id="student-select-wrap"></span>
             <span id="token-status" class="small text-secondary"></span>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-profile" title="Профиль" aria-label="Профиль"><i class="bi bi-person"></i></button>
+            <button class="btn btn-sm btn-outline-secondary" id="btn-settings" title="Настройки" aria-label="Настройки"><i class="bi bi-gear"></i></button>
             <button class="btn btn-sm btn-outline-secondary" id="btn-refresh" title="Обновить"><i class="bi bi-arrow-clockwise"></i></button>
             <button class="btn btn-sm btn-outline-secondary" id="btn-theme" title="Тема"><i class="bi bi-sun"></i></button>
             <button class="btn btn-sm btn-outline-secondary" id="btn-login" title="Войти заново"><i class="bi bi-key"></i></button>

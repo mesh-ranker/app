@@ -82,8 +82,8 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
                 SettingsRow(
                     "Тип",
                     when (tokenInfo.optString("kind")) {
-                        "jwt" -> "JWT"
-                        "opaque" -> "opaque"
+                        "jwt" -> "Подписанный ключ доступа"
+                        "opaque" -> "Защищённая строка"
                         else -> "—"
                     }
                 )
@@ -151,7 +151,7 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
             onDismissRequest = { updateInfo = null },
             title = { Text("Доступно обновление") },
             text = {
-                Text("На GitHub уже есть версия ${info.versionName}. Можно скачать и установить её.")
+                Text("Доступна новая версия ${info.versionName}. Можно скачать и установить её.")
             },
             confirmButton = {
                 TextButton(

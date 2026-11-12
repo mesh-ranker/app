@@ -179,8 +179,16 @@ class MeshCoreTest {
         )
         val summary = MeshCore.summarizeMarks(marks)
         assertEquals(3, summary.getInt("count"))
+        assertEquals(3, summary.getInt("withValue"))
+        assertEquals(0, summary.getInt("withoutValue"))
+        assertEquals(2, summary.getInt("subjectCount"))
         assertEquals(4.0, summary.getDouble("average"), 0.001)
         assertEquals(4.0, summary.getDouble("weightedAverage"), 0.001)
+        assertEquals(4.0, summary.getDouble("median"), 0.001)
+        assertEquals(3, summary.getInt("positiveCount"))
+        assertEquals(1.0, summary.getDouble("positiveShare"), 0.001)
+        assertEquals(1, summary.getInt("fivesCount"))
+        assertEquals(2.0, summary.getDouble("range"), 0.001)
         assertEquals(2, summary.getJSONArray("bySubject").length())
         assertEquals(1, summary.getJSONArray("byValue").getJSONObject(0).getInt("count")) // пятёрок одна
         assertEquals("2026-10-03", summary.getJSONObject("lastMark").getString("date"))
@@ -348,6 +356,30 @@ class MeshCoreTest {
         assertEquals(2, marks.length())
         assertEquals("2026-09-05", marks.getJSONObject(0).getString("date"))
         assertEquals("5", marks.getJSONObject(1).getString("markText"))
+        assertEquals("Первая четверть", marks.getJSONObject(0).getString("periodName"))
+
+        val markFromJournal = MeshCore.normalizeMark(
+            JSONObject("""{"id": 3, "value": 4, "subject_id": 123, "date": "2026-09-12", "control_form_name": "Тест"}""")
+        )
+        val matchedPeriod = MeshCore.resolveMarkPeriod(markFromJournal, subjects)
+        assertEquals("Первая четверть", matchedPeriod.getString("name"))
+        assertFalse(matchedPeriod.getBoolean("approximate"))
+
+        val periodsWithoutBoundaries = MeshCore.normalizeSubjectMarks(
+            JSONArray(
+                """[{"subject_id": 123, "subject_name": "Алгебра", "periods": [{"title": "Первый триместр", "marks": [{"id": 1, "value": 4, "date": "2026-09-12", "control_form_name": "Тест"}]}]}]"""
+            )
+        )
+        val matchedByMarkData = MeshCore.resolveMarkPeriod(markFromJournal, periodsWithoutBoundaries)
+        assertEquals("Первый триместр", matchedByMarkData.getString("name"))
+        assertFalse(matchedByMarkData.getBoolean("approximate"))
+
+        val markWithoutOfficialPeriod = MeshCore.normalizeMark(
+            JSONObject("""{"value": 4, "subject_id": 123, "date": "2026-11-12"}""")
+        )
+        val guessedPeriod = MeshCore.resolveMarkPeriod(markWithoutOfficialPeriod, subjects)
+        assertEquals("2-я четверть (ориентировочно)", guessedPeriod.getString("name"))
+        assertTrue(guessedPeriod.getBoolean("approximate"))
     }
 
     @Test

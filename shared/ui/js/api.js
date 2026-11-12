@@ -106,7 +106,7 @@ async function localApi(path, options) {
   }
   if (pathname === '/api/subject-marks') {
     const sid = q.get('studentId') || studentId;
-    return { marks: await client.getSubjectMarks(sid) };
+    return { marks: MeshCore.normalizeSubjectMarks(await client.getSubjectMarks(sid)) };
   }
   if (pathname === '/api/rank') {
     const board = await client.getRankBoard({
@@ -166,7 +166,7 @@ async function api(path, options) {
     const url = base + (path.startsWith('/') ? path : '/' + path);
     const res = await fetch(url, Object.assign({}, options, { headers }));
     let json;
-    try { json = await res.json(); } catch (e) { throw new Error('Сервер вернул не-JSON ответ'); }
+    try { json = await res.json(); } catch (e) { throw new Error('Сервер вернул данные в неожиданном формате'); }
     if (!json.ok) throw new Error((json.error && json.error.message) ? json.error.message : 'Ошибка');
     if (json.token) setToken(json.token);
     return json.data;

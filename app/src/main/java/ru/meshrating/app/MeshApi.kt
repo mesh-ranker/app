@@ -188,7 +188,7 @@ class MeshApi(private val context: Context) {
 
     fun subjectMarks(params: JSONObject?): JSONObject {
         val child = studentFrom(params)
-        return JSONObject().put("marks", ensureClient().getSubjectMarks(child.optString("id")))
+        return JSONObject().put("marks", ensureClient().getSubjectMarksDetailed(child.optString("id")))
     }
 
     fun rank(params: JSONObject?): JSONObject {

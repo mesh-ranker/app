@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mesh Ranker</string>
+    <string name="app_name">МЭШ: дневник и рейтинг</string>
     <string name="login_title">Вход в МЭШ</string>
 
     <string name="menu_refresh">Обновить данные</string>
@@ -11,7 +11,7 @@
     <string name="menu_about">О программе</string>
     <string name="menu_open_mesh">Открыть school.mos.ru</string>
 
-    <string name="about_title">Mesh Ranker</string>
+    <string name="about_title">МЭШ: дневник и рейтинг</string>
     <string name="about_message">Рейтинг класса, оценки, домашние задания и расписание МЭШ.\n\nНеофициальный клиент. Токен хранится в приватном хранилище приложения и обновляется автоматически.</string>
     <string name="about_close">Понятно</string>
 

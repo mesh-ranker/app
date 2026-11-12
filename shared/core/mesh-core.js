@@ -433,6 +433,9 @@
 
   function normalizeMark(mark) {
     var raw = mark || {};
+    var rawPeriod = raw.period && typeof raw.period === 'object'
+      ? util.firstDefined(raw.period.title, raw.period.name, raw.period.label)
+      : raw.period;
     return {
       id: util.asStr(util.firstDefined(raw.id, raw.mark_id, '')),
       value: util.asNum(util.firstDefined(raw.value, raw.mark, null)),
@@ -441,6 +444,11 @@
       controlForm: util.asStr(util.firstDefined(raw.control_form_name, raw.controlForm, raw.form_name, '—')),
       weight: util.asNum(util.firstDefined(raw.weight, 1), 1),
       date: util.toIso(util.firstDefined(raw.created_at, raw.date, util.todayIso())),
+      periodId: util.asStr(util.firstDefined(raw.period_id, raw.periodId, raw.term_id, '')),
+      periodName: util.asStr(util.firstDefined(
+        raw.period_name, raw.periodName, raw.period_title, raw.periodTitle,
+        raw.study_period_name, raw.academic_period_name, raw.term_name, rawPeriod, ''
+      )),
       comment: util.asStr(util.firstDefined(raw.comment, '')),
       isExam: util.asBool(util.firstDefined(raw.is_exam, raw.isExam, false)),
       raw: raw
@@ -453,25 +461,187 @@
     return data.payload || data.marks || data.items || [];
   }
 
-  /** Сводка по оценкам: средняя, взвешенная по весу работы, распределение. */
+  /** Нормализует итоги по предметам и сохраняет границы учебных периодов из МЭШ. */
+  function normalizeSubjectMarks(items) {
+    return payloadList(items).filter(function (item) { return item && typeof item === 'object'; }).map(function (item) {
+      var subjectId = util.asStr(util.firstDefined(item.subject_id, item.subjectId, ''));
+      var subjectName = util.asStr(util.firstDefined(item.subject_name, item.subjectName, '—'));
+      var allMarks = [];
+      var periods = (Array.isArray(item.periods) ? item.periods : []).map(function (period) {
+        period = period || {};
+        var title = util.asStr(util.firstDefined(period.title, period.name, period.period_name, ''));
+        var periodId = util.asStr(util.firstDefined(period.period_id, period.periodId, period.id, ''));
+        var periodMarks = (Array.isArray(period.marks) ? period.marks : []).filter(function (mark) {
+          return mark && typeof mark === 'object';
+        }).map(function (rawMark) {
+          var mark = normalizeMark(rawMark);
+          if (!mark.subjectId) mark.subjectId = subjectId;
+          if (!mark.subjectName || mark.subjectName === '—') mark.subjectName = subjectName;
+          if (!mark.periodName) mark.periodName = title;
+          if (!mark.periodId) mark.periodId = periodId;
+          allMarks.push(mark);
+          return mark;
+        });
+        return {
+          id: periodId,
+          title: title,
+          start: util.asStr(util.firstDefined(period.start, period.start_date, period.date_from, '')),
+          end: util.asStr(util.firstDefined(period.end, period.end_date, period.date_to, '')),
+          value: util.asNum(util.firstDefined(period.value, period.fixed_value, null)),
+          dynamic: util.asStr(period.dynamic),
+          count: periodMarks.length,
+          marks: periodMarks
+        };
+      });
+
+      if (!allMarks.length) {
+        (Array.isArray(item.marks) ? item.marks : []).forEach(function (rawMark, index) {
+          if (rawMark && typeof rawMark === 'object') {
+            var mark = normalizeMark(rawMark);
+            if (!mark.subjectId) mark.subjectId = subjectId;
+            if (!mark.subjectName || mark.subjectName === '—') mark.subjectName = subjectName;
+            allMarks.push(mark);
+          } else {
+            var value = util.asNum(rawMark);
+            if (value !== null) {
+              allMarks.push({
+                id: subjectId + '-' + index,
+                value: value,
+                markText: String(rawMark),
+                subjectId: subjectId,
+                subjectName: subjectName,
+                controlForm: '—',
+                weight: 1,
+                date: util.todayIso(),
+                periodId: '',
+                periodName: '',
+                comment: '',
+                isExam: false
+              });
+            }
+          }
+        });
+      }
+
+      return {
+        subjectId: subjectId,
+        subjectName: subjectName,
+        average: util.asNum(item.average),
+        averageByAll: util.asNum(util.firstDefined(item.average_by_all, item.averageByAll, null)),
+        yearMark: util.asNum(util.firstDefined(item.year_mark, item.yearMark, item.final_mark, null)),
+        dynamic: util.asStr(item.dynamic),
+        periods: periods,
+        marks: allMarks.sort(function (a, b) { return (b.date || '').localeCompare(a.date || ''); })
+      };
+    });
+  }
+
+  function periodDateParts(value) {
+    var text = util.asStr(value).trim();
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(text);
+    if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+    var local = /^(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?$/.exec(text);
+    if (local) return { year: local[3] ? Number(local[3]) : null, month: Number(local[2]), day: Number(local[1]) };
+    return null;
+  }
+
+  function periodContainsDate(period, date) {
+    var target = periodDateParts(date);
+    var start = periodDateParts(period && period.start);
+    var end = periodDateParts(period && period.end);
+    if (!target || !start || !end) return false;
+    var startYear = start.year;
+    var endYear = end.year;
+    if (startYear === null && endYear === null) {
+      if (start.month > end.month) {
+        if (target.month <= end.month) { startYear = target.year - 1; endYear = target.year; }
+        else if (target.month >= start.month) { startYear = target.year; endYear = target.year + 1; }
+        else return false;
+      } else {
+        startYear = target.year;
+        endYear = target.year;
+      }
+    } else {
+      startYear = startYear === null ? target.year : startYear;
+      endYear = endYear === null ? target.year : endYear;
+    }
+    function iso(parts, year) {
+      return String(year).padStart(4, '0') + '-' + String(parts.month).padStart(2, '0') + '-' + String(parts.day).padStart(2, '0');
+    }
+    var from = iso(start, startYear);
+    var to = iso(end, endYear);
+    return date >= from && date <= to;
+  }
+
+  function guessedQuarter(date) {
+    var parts = periodDateParts(date);
+    if (!parts) return null;
+    if (parts.month >= 9 && parts.month <= 10) return '1-я четверть';
+    if (parts.month === 11 || parts.month === 12) return '2-я четверть';
+    if (parts.month >= 1 && parts.month <= 3) return '3-я четверть';
+    if (parts.month === 4 || parts.month === 5) return '4-я четверть';
+    return null;
+  }
+
+  /** Определяет период оценки по данным МЭШ, а при их отсутствии — приблизительно по дате. */
+  function resolveMarkPeriod(mark, subjects) {
+    var row = mark || {};
+    var direct = util.asStr(row.periodName).trim();
+    if (direct) return { name: direct, approximate: false };
+    var subjectId = util.asStr(row.subjectId);
+    var subjectName = util.asStr(row.subjectName);
+    var subject = (subjects || []).find(function (item) {
+      return (subjectId && util.asStr(item.subjectId) === subjectId) ||
+        (!subjectId && subjectName && util.asStr(item.subjectName) === subjectName);
+    });
+    var periods = subject && Array.isArray(subject.periods) ? subject.periods : [];
+    var markId = util.asStr(row.id);
+    var markPeriodId = util.asStr(row.periodId);
+    var exactPeriod = periods.find(function (period) {
+      if (markPeriodId && util.asStr(period.id) === markPeriodId) return true;
+      return (period.marks || []).some(function (periodMark) {
+        var periodMarkId = util.asStr(periodMark.id);
+        if (markId && periodMarkId && markId === periodMarkId) return true;
+        return !!row.date && row.date === periodMark.date && Number(row.value) === Number(periodMark.value) &&
+          (!row.controlForm || row.controlForm === periodMark.controlForm);
+      });
+    });
+    if (!exactPeriod) {
+      exactPeriod = periods.find(function (period) { return periodContainsDate(period, row.date); });
+    }
+    if (exactPeriod && util.asStr(exactPeriod.title).trim()) {
+      return { name: util.asStr(exactPeriod.title).trim(), approximate: false };
+    }
+    var guess = guessedQuarter(row.date);
+    return guess
+      ? { name: guess + ' (ориентировочно)', approximate: true }
+      : { name: 'Период не определён', approximate: true };
+  }
+
+  /** Сводка и дополнительные показатели по оценкам за выбранный период. */
   function summarizeMarks(marks) {
-    var values = (marks || []).map(function (mark) { return mark.value; }).filter(function (v) { return v !== null; });
+    var rows = marks || [];
+    var values = stats.values(rows, function (mark) { return mark && mark.value; });
     var weightedSum = 0;
     var weights = 0;
-    (marks || []).forEach(function (mark) {
-      if (mark.value === null) return;
-      var w = mark.weight && mark.weight > 0 ? mark.weight : 1;
-      weightedSum += mark.value * w;
-      weights += w;
+    rows.forEach(function (mark) {
+      var value = mark ? Number(mark.value) : NaN;
+      if (!isFinite(value)) return;
+      var weight = Number(mark.weight);
+      if (!isFinite(weight) || weight <= 0) weight = 1;
+      weightedSum += value * weight;
+      weights += weight;
     });
-    var bySubject = {};
-    (marks || []).forEach(function (mark) {
-      var key = mark.subjectId || mark.subjectName;
+    var bySubject = Object.create(null);
+    rows.forEach(function (mark) {
+      var key = util.asStr(mark && (mark.subjectId || mark.subjectName)) || '—';
       if (!bySubject[key]) {
         bySubject[key] = { subjectId: mark.subjectId, subjectName: mark.subjectName, marks: [], values: [] };
       }
       bySubject[key].marks.push(mark);
-      if (mark.value !== null) bySubject[key].values.push(mark.value);
+      if (mark.value !== null && mark.value !== undefined && mark.value !== '' && isFinite(Number(mark.value))) {
+        bySubject[key].values.push(Number(mark.value));
+      }
     });
     var subjectList = Object.keys(bySubject).map(function (key) {
       var group = bySubject[key];
@@ -481,6 +651,8 @@
         count: group.marks.length,
         average: util.round(stats.mean(group.values), 2),
         median: util.round(stats.median(group.values), 2),
+        best: stats.max(group.values),
+        worst: stats.min(group.values),
         color: stats.gradeColor(stats.mean(group.values)),
         marks: group.marks
       };
@@ -489,17 +661,33 @@
       var count = values.filter(function (v) { return Math.round(v) === value; }).length;
       return { value: value, count: count, color: stats.gradeColor(value) };
     });
-    var sorted = (marks || []).slice().sort(function (a, b) {
+    var countFor = function (grade) {
+      var bucket = byValue.find(function (item) { return item.value === grade; });
+      return bucket ? bucket.count : 0;
+    };
+    var positiveCount = values.filter(function (value) { return value >= 3; }).length;
+    var sorted = rows.slice().sort(function (a, b) {
       return (b.date || '').localeCompare(a.date || '');
     });
     return {
-      count: (marks || []).length,
+      count: rows.length,
       withValue: values.length,
+      withoutValue: rows.length - values.length,
+      subjectCount: subjectList.length,
       average: util.round(stats.mean(values), 2),
       weightedAverage: weights ? util.round(weightedSum / weights, 2) : null,
       median: util.round(stats.median(values), 2),
-      best: values.length ? Math.max.apply(null, values) : null,
-      worst: values.length ? Math.min.apply(null, values) : null,
+      standardDeviation: util.round(stats.stdDev(values), 2),
+      best: stats.max(values),
+      worst: stats.min(values),
+      range: values.length ? stats.max(values) - stats.min(values) : null,
+      positiveCount: positiveCount,
+      positiveShare: values.length ? util.round(positiveCount / values.length, 4) : null,
+      fivesCount: countFor(5),
+      foursCount: countFor(4),
+      threesCount: countFor(3),
+      twosCount: countFor(2),
+      totalWeight: weights,
       bySubject: subjectList,
       byValue: byValue,
       lastMark: sorted[0] || null
@@ -905,6 +1093,8 @@
     buildRankTable: buildRankTable,
     summarizeRank: summarizeRank,
     normalizeMark: normalizeMark,
+    normalizeSubjectMarks: normalizeSubjectMarks,
+    resolveMarkPeriod: resolveMarkPeriod,
     normalizeHomework: normalizeHomework,
     normalizeSchedule: normalizeSchedule,
     payloadList: payloadList,
