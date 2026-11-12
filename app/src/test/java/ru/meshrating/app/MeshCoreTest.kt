@@ -183,7 +183,24 @@ class MeshCoreTest {
         assertEquals(4.0, summary.getDouble("weightedAverage"), 0.001)
         assertEquals(2, summary.getJSONArray("bySubject").length())
         assertEquals(1, summary.getJSONArray("byValue").getJSONObject(0).getInt("count")) // пятёрок одна
+        // Единицы в распределении нет — её в школе не ставят.
+        assertEquals(4, summary.getJSONArray("byValue").length())
+        assertEquals(2, summary.getJSONArray("byValue").getJSONObject(3).getInt("value"))
         assertEquals("2026-10-03", summary.getJSONObject("lastMark").getString("date"))
+    }
+
+    @Test
+    fun `ДЗ по умолчанию на завтра, а в пятницу-воскресенье на понедельник`() {
+        // 2026-11-12 — четверг → завтра, 13-е.
+        assertEquals("2026-11-13", MeshCore.defaultHomeworkDate("2026-11-12"))
+        // 2026-11-13 — пятница → понедельник, 16-е.
+        assertEquals("2026-11-16", MeshCore.defaultHomeworkDate("2026-11-13"))
+        // 2026-11-14 — суббота → понедельник, 16-е.
+        assertEquals("2026-11-16", MeshCore.defaultHomeworkDate("2026-11-14"))
+        // 2026-11-15 — воскресенье → понедельник, 16-е.
+        assertEquals("2026-11-16", MeshCore.defaultHomeworkDate("2026-11-15"))
+        // 2026-11-16 — понедельник → завтра, 17-е.
+        assertEquals("2026-11-17", MeshCore.defaultHomeworkDate("2026-11-16"))
     }
 
     @Test

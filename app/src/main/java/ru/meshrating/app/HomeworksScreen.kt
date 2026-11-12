@@ -41,8 +41,8 @@ fun HomeworksScreen(
     var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
     var homeworks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
-    // По умолчанию — ДЗ, заданные НА ЗАВТРА.
-    var selectedDate by remember { mutableStateOf(MeshCore.addDays(MeshCore.today(), 1)) }
+    // По умолчанию — ДЗ на завтра; в пятницу/субботу/воскресенье — на понедельник.
+    var selectedDate by remember { mutableStateOf(MeshCore.defaultHomeworkDate()) }
     // due — домашнее задание к уроку выбранного дня (как в дневнике);
     // assigned — по дате, когда его задали.
     var mode by remember { mutableStateOf("due") }

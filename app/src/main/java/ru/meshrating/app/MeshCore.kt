@@ -1126,8 +1126,9 @@ object MeshCore {
                 .put("marks", JSONArray(group.sortedByDescending { it.optString("date") }))
         }.sortedByDescending { it.optDouble("average", 0.0) }
 
+        // Единицу не показываем — её в школе не ставят.
         val byValue = JSONArray()
-        listOf(5, 4, 3, 2, 1).forEach { value ->
+        listOf(5, 4, 3, 2).forEach { value ->
             byValue.put(
                 JSONObject()
                     .put("value", value)
@@ -1186,6 +1187,21 @@ object MeshCore {
         val calendar = parseIso(iso)
         calendar.add(Calendar.DAY_OF_YEAR, days)
         return formatter().format(calendar.time)
+    }
+
+    /**
+     * Дата по умолчанию для экрана ДЗ: обычно завтра, но если сегодня
+     * пятница/суббота/воскресенье — ближайший понедельник, чтобы сразу видеть
+     * задания на начало учебной недели.
+     */
+    fun defaultHomeworkDate(today: String = today()): String {
+        val weekday = parseIso(today).get(Calendar.DAY_OF_WEEK)
+        return when (weekday) {
+            Calendar.FRIDAY -> addDays(today, 3)
+            Calendar.SATURDAY -> addDays(today, 2)
+            Calendar.SUNDAY -> addDays(today, 1)
+            else -> addDays(today, 1)
+        }
     }
 
     /** Первый день учебного года (1 сентября). */
