@@ -225,6 +225,32 @@ class MeshClient(
     fun getSubjectMarksDetailed(studentId: String?): JSONArray =
         MeshCore.normalizeSubjectMarks(getSubjectMarks(studentId))
 
+    /** Учебные годы для селектора итоговых оценок. */
+    fun getAcademicYears(): JSONArray =
+        MeshCore.normalizeAcademicYears(MeshCore.payloadList(request(MeshCore.Paths.ACADEMIC_YEARS)))
+
+    /**
+     * Итоговые оценки за учебный год.
+     * Для прошлых лет МЭШ просит `is_year_marks_only=true`, чтобы вернуть только годовые.
+     */
+    fun getFinalMarks(
+        personId: String?,
+        studentId: String?,
+        academicYearId: String,
+        yearOnly: Boolean = false
+    ): JSONArray {
+        val json = request(
+            MeshCore.Paths.FINAL_MARKS,
+            mapOf(
+                "person_id" to personId,
+                "student_id" to studentId,
+                "academic_year_id" to academicYearId,
+                "is_year_marks_only" to if (yearOnly) "true" else null
+            )
+        )
+        return MeshCore.normalizeFinalMarks(json)
+    }
+
     fun getHomeworks(studentId: String?, from: String, to: String): List<JSONObject> {
         val json = request(MeshCore.Paths.HOMEWORKS, mapOf("student_id" to studentId, "from" to from, "to" to to))
         val list = MeshCore.payloadList(json)

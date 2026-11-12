@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 
 @Composable
@@ -38,9 +39,29 @@ fun RankingScreen(
     val isGeneral = selectedSubject == "all"
     val monthlyMode = isGeneral && period == "month"
 
-    fun load(monthlyMode: Boolean) {
+    // Дневной кэш рейтинга: ключ дня начинается в 05:00. Первый вход после
+    // 05:00 сохраняет данные на весь учебный день, дальше сеть не дёргается.
+    val dayKey = MeshCore.academicDayKey()
+
+    fun load(monthlyMode: Boolean, force: Boolean = false) {
         if (personId.isNullOrBlank()) {
             loading = false
+            return
+        }
+        val subjectKey = if (selectedSubject == "all") "all" else selectedSubject
+        val boardKey = "$personId|$subjectKey|${if (monthlyMode) "month" else "year"}"
+        val existing = store.loadRankingCache()
+        val validDay = existing.optString("day") == dayKey
+        val cachedArray = if (!force && validDay) existing.optJSONObject("subjects")?.optJSONArray(personId) else null
+        val cachedSubjects = cachedArray?.let { arr ->
+            (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+        }
+        val cachedBoard = if (!force && validDay) existing.optJSONObject("boards")?.optJSONObject(boardKey) else null
+        if (cachedSubjects != null && cachedBoard != null) {
+            subjects = cachedSubjects
+            board = cachedBoard
+            loading = false
+            error = null
             return
         }
         loading = true
@@ -48,9 +69,11 @@ fun RankingScreen(
         scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    val arr = client.getSubjects(personId, date)
-                    val subs = (0 until arr.length()).map { arr.getJSONObject(it) }
-                    val b = client.getRankBoard(
+                    val subs = cachedSubjects ?: run {
+                        val arr = client.getSubjects(personId, date)
+                        (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                    }
+                    val b = cachedBoard ?: client.getRankBoard(
                         personId = personId,
                         date = date,
                         subjectId = if (selectedSubject == "all") null else selectedSubject,
@@ -61,6 +84,14 @@ fun RankingScreen(
                 }
                 subjects = result.first
                 board = result.second
+                val saved = if (validDay) existing else JSONObject().put("day", dayKey)
+                val subjectsCache = saved.optJSONObject("subjects") ?: JSONObject()
+                subjectsCache.put(personId, JSONArray(result.first))
+                val boardsCache = saved.optJSONObject("boards") ?: JSONObject()
+                boardsCache.put(boardKey, result.second)
+                saved.put("subjects", subjectsCache)
+                saved.put("boards", boardsCache)
+                store.saveRankingCache(saved)
             } catch (e: Exception) {
                 error = MeshCore.describeError(e)
             } finally {
@@ -157,7 +188,7 @@ fun RankingScreen(
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { load(monthlyMode) }) { Text("Повторить") }
+                    Button(onClick = { load(monthlyMode, force = true) }) { Text("Повторить") }
                 }
             }
             else -> {

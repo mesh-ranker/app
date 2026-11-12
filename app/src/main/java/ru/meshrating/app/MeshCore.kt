@@ -33,6 +33,8 @@ object MeshCore {
         const val RANK = "/api/ej/rating/v1/rank/class"
         const val MARKS = "/api/family/web/v1/marks"
         const val SUBJECT_MARKS = "/api/family/web/v1/subject_marks"
+        const val FINAL_MARKS = "/api/family/web/v1/final_marks/v2"
+        const val ACADEMIC_YEARS = "/api/ej/core/family/v1/academic_years"
         const val HOMEWORKS = "/api/family/web/v1/homeworks"
         const val HOMEWORK_LAUNCH = "/api/ej/partners/v1/homeworks/launch"
         const val SCHEDULE = "/api/family/web/v1/schedule"
@@ -732,6 +734,72 @@ object MeshCore {
         return result
     }
 
+    /**
+     * Нормализует список учебных годов из `/api/ej/core/family/v1/academic_years`.
+     *
+     * МЭШ отдаёт массив `[{id, name, begin_date, end_date, calendar_id, current_year}]`,
+     * где `id` — это и есть `academic_year_id` (например, 14 = «2026 - 2027»).
+     */
+    fun normalizeAcademicYears(items: JSONArray): JSONArray {
+        val result = mutableListOf<JSONObject>()
+        for (index in 0 until items.length()) {
+            val item = items.optJSONObject(index) ?: continue
+            val id = asString(item.opt("id"))
+            if (id.isBlank()) continue
+            result.add(
+                JSONObject()
+                    .put("id", id)
+                    .put("name", asString(firstDefined(item.opt("name"), id)))
+                    .put("beginDate", toIso(asString(item.opt("begin_date"))))
+                    .put("endDate", toIso(asString(item.opt("end_date"))))
+                    .put("currentYear", asBool(item.opt("current_year")))
+            )
+        }
+        return JSONArray(result.sortedBy { it.optString("beginDate") })
+    }
+
+    /**
+     * Нормализует ответ `/api/family/web/v1/final_marks/v2`.
+     *
+     * В ответе `subjects[]`: `id`, `name`, `year_mark`, `intermediate_attestation_mark`,
+     * `training_camp_mark` и `periods[]` (четверти/триместры с `final_mark`).
+     */
+    fun normalizeFinalMarks(json: JSONObject?): JSONArray {
+        val subjects = json?.optJSONArray("subjects") ?: JSONArray()
+        val result = JSONArray()
+        for (index in 0 until subjects.length()) {
+            val subject = subjects.optJSONObject(index) ?: continue
+            val periods = JSONArray()
+            val rawPeriods = subject.optJSONArray("periods") ?: JSONArray()
+            for (p in 0 until rawPeriods.length()) {
+                val period = rawPeriods.optJSONObject(p) ?: continue
+                val value = asNullableDouble(firstDefined(period.opt("final_mark"), period.opt("value")))
+                periods.put(
+                    JSONObject()
+                        .put("id", asString(period.opt("id")))
+                        .put("name", asString(firstDefined(period.opt("name"), "Период")))
+                        .put("ordinal", asString(period.opt("ordinal")))
+                        .put("value", value ?: JSONObject.NULL)
+                        .put("start", asString(period.opt("start_date")))
+                        .put("end", asString(period.opt("end_date")))
+                )
+            }
+            result.put(
+                JSONObject()
+                    .put("subjectId", asString(subject.opt("id")))
+                    .put("subjectName", asString(firstDefined(subject.opt("name"), "—")))
+                    .put("yearMark", asNullableDouble(subject.opt("year_mark")) ?: JSONObject.NULL)
+                    .put(
+                        "attestationMark",
+                        asNullableDouble(subject.opt("intermediate_attestation_mark")) ?: JSONObject.NULL
+                    )
+                    .put("campMark", asNullableDouble(subject.opt("training_camp_mark")) ?: JSONObject.NULL)
+                    .put("periods", periods)
+            )
+        }
+        return result
+    }
+
     /** Приводит относительную ссылку МЭШ к абсолютному URL. */
     fun absoluteUrl(raw: String?): String {
         val text = raw?.trim().orEmpty()
@@ -1075,6 +1143,18 @@ object MeshCore {
     private fun formatter(): SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
     fun today(): String = formatter().format(Date())
+
+    /**
+     * Ключ «учебного дня» для дневного кэша рейтинга: день начинается в 05:00.
+     * Первый вход после 05:00 создаёт кэш на весь день; до 05:00 ещё действует
+     * кэш предыдущего календарного дня.
+     */
+    fun academicDayKey(now: Long = System.currentTimeMillis()): String {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = now
+        calendar.add(Calendar.HOUR_OF_DAY, -5)
+        return formatter().format(calendar.time)
+    }
 
     fun toIso(value: String?): String {
         val text = value?.trim() ?: return today()

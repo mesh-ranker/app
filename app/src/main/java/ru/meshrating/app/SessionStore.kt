@@ -29,6 +29,7 @@ class SessionStore(context: Context) {
         private const val KEY_PERSON_ID = "personId"
         private const val KEY_PARENT_NAME = "parentName"
         private const val KEY_NAMES = "names_v2"
+        private const val KEY_RANKING_CACHE = "ranking_cache_v1"
         private const val KEY_LAST_REFRESH = "lastRefresh"
         private const val KEY_LAST_UPDATE_CHECK = "lastUpdateCheck"
     }
@@ -162,6 +163,25 @@ class SessionStore(context: Context) {
         val json = JSONObject()
         names.forEach { (key, value) -> json.put(key, value) }
         cache.edit().putString(KEY_NAMES, json.toString()).apply()
+    }
+
+    // ------------------------------------------------- дневной кэш рейтинга --
+
+    /**
+     * Дневной кэш рейтинга. Хранится одним объектом с ключом дня (`day`),
+     * списком предметов и таблицами по предметам — так кэш не растёт бесконечно.
+     */
+    fun loadRankingCache(): JSONObject {
+        val raw = cache.getString(KEY_RANKING_CACHE, null) ?: return JSONObject()
+        return try {
+            JSONObject(raw)
+        } catch (error: Exception) {
+            JSONObject()
+        }
+    }
+
+    fun saveRankingCache(value: JSONObject) {
+        cache.edit().putString(KEY_RANKING_CACHE, value.toString()).apply()
     }
 
     // -------------------------------------------------------------- настройки --

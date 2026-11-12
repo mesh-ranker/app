@@ -360,4 +360,58 @@ class MeshCoreTest {
         assertEquals(3, subject.getJSONArray("marks").length())
         assertEquals(4.0, subject.getDouble("yearMark"), 0.001)
     }
+
+    @Test
+    fun `дневной кэш рейтинга начинается в 05 утра`() {
+        val zone = java.util.TimeZone.getDefault()
+        fun millis(month: Int, day: Int, hour: Int, minute: Int): Long {
+            val c = java.util.Calendar.getInstance(zone)
+            c.clear()
+            c.set(2026, month, day, hour, minute, 0)
+            return c.timeInMillis
+        }
+        // 12 ноября 2026, 04:59 — ещё предыдущий учебный день.
+        assertEquals("2026-11-11", MeshCore.academicDayKey(millis(java.util.Calendar.NOVEMBER, 12, 4, 59)))
+        // 05:00 — уже новый учебный день.
+        assertEquals("2026-11-12", MeshCore.academicDayKey(millis(java.util.Calendar.NOVEMBER, 12, 5, 0)))
+        assertEquals("2026-11-12", MeshCore.academicDayKey(millis(java.util.Calendar.NOVEMBER, 12, 23, 59)))
+    }
+
+    @Test
+    fun `учебные годы сортируются и находят текущий`() {
+        val raw = JSONArray(
+            """[
+              {"id": 13, "name": "2025 - 2026", "begin_date": "2025-09-01", "end_date": "2026-08-31", "current_year": false},
+              {"id": 14, "name": "2026 - 2027", "begin_date": "2026-09-01", "end_date": "2027-08-31", "current_year": true}
+            ]"""
+        )
+        val years = MeshCore.normalizeAcademicYears(raw)
+        assertEquals(2, years.length())
+        assertEquals("13", years.getJSONObject(0).getString("id"))
+        assertEquals("14", years.getJSONObject(1).getString("id"))
+        assertEquals("2026-09-01", years.getJSONObject(1).getString("beginDate"))
+        assertTrue(years.getJSONObject(1).getBoolean("currentYear"))
+    }
+
+    @Test
+    fun `итоговые оценки разбирают год и периоды`() {
+        val raw = JSONObject(
+            """{"subjects": [
+              {"id": 33623648, "name": "Алгебра", "year_mark": null,
+               "periods": [{"id": 1, "name": "Первая четверть", "ordinal": "I", "final_mark": "5",
+                            "start_date": "01.09.2026", "end_date": "23.10.2026"}]},
+              {"id": 33623620, "name": "География", "year_mark": "4", "periods": []}
+            ]}"""
+        )
+        val marks = MeshCore.normalizeFinalMarks(raw)
+        assertEquals(2, marks.length())
+        val algebra = marks.getJSONObject(0)
+        assertEquals("33623648", algebra.getString("subjectId"))
+        assertEquals("Алгебра", algebra.getString("subjectName"))
+        assertTrue(algebra.isNull("yearMark"))
+        val period = algebra.getJSONArray("periods").getJSONObject(0)
+        assertEquals("Первая четверть", period.getString("name"))
+        assertEquals(5.0, period.getDouble("value"), 0.001)
+        assertEquals(4.0, marks.getJSONObject(1).getDouble("yearMark"), 0.001)
+    }
 }

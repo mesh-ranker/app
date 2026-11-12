@@ -1,32 +1,49 @@
 package ru.meshrating.app
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 /**
  * «Оценки» объединяют два режима:
  *  - по дате — все оценки за последние 30 дней, сгруппированные по дням;
  *  - по предмету — список предметов из `/subject_marks`, по нажатию открывается
  *    список оценок конкретного предмета.
+ *
+ * В обоих режимах показываются графики (распределение оценок и динамика по
+ * неделям) и раздел «Итоговые оценки» с выбором учебного года.
  */
 @Composable
 fun MarksScreen(
     store: SessionStore,
     client: MeshClient,
     studentId: String?,
+    personId: String? = null,
     subjectId: String? = null,
     onOpenSubject: (String, String) -> Unit = { _, _ -> }
 ) {
@@ -36,8 +53,17 @@ fun MarksScreen(
     var marks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var subjects by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     var retryKey by remember { mutableStateOf(0) }
+
+    // Итоговые оценки и учебные годы.
+    var academicYears by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var selectedYearId by remember { mutableStateOf<String?>(null) }
+    var finalMarks by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
+    var finalLoading by remember { mutableStateOf(false) }
+    var finalError by remember { mutableStateOf<String?>(null) }
+
     val from = MeshCore.addDays(MeshCore.today(), -30)
     val to = MeshCore.today()
+    val effectivePersonId = personId?.takeIf { it.isNotBlank() } ?: store.personId
 
     LaunchedEffect(studentId, mode, subjectId, retryKey) {
         if (studentId.isNullOrBlank()) {
@@ -60,6 +86,48 @@ fun MarksScreen(
             error = MeshCore.describeError(e)
         } finally {
             loading = false
+        }
+    }
+
+    // Учебные годы грузим один раз; по умолчанию — текущий.
+    LaunchedEffect(studentId) {
+        if (studentId.isNullOrBlank()) return@LaunchedEffect
+        try {
+            val years = withContext(Dispatchers.IO) { client.getAcademicYears().toObjectList() }
+            academicYears = years
+            if (selectedYearId == null) {
+                val current = years.firstOrNull { it.optBoolean("currentYear") }
+                    ?: years.maxByOrNull { it.optString("beginDate") }
+                selectedYearId = current?.optString("id")?.takeIf { it.isNotBlank() }
+            }
+        } catch (e: Exception) {
+            finalError = MeshCore.describeError(e)
+        }
+    }
+
+    // Итоговые оценки перезагружаем при смене года.
+    LaunchedEffect(studentId, effectivePersonId, selectedYearId) {
+        val yearId = selectedYearId
+        if (studentId.isNullOrBlank() || effectivePersonId.isNullOrBlank() || yearId.isNullOrBlank()) {
+            return@LaunchedEffect
+        }
+        finalLoading = true
+        finalError = null
+        try {
+            val selected = academicYears.firstOrNull { it.optString("id") == yearId }
+            val yearOnly = selected != null && !selected.optBoolean("currentYear")
+            finalMarks = withContext(Dispatchers.IO) {
+                client.getFinalMarks(
+                    personId = effectivePersonId,
+                    studentId = studentId,
+                    academicYearId = yearId,
+                    yearOnly = yearOnly
+                ).toObjectList()
+            }
+        } catch (e: Exception) {
+            finalError = MeshCore.describeError(e)
+        } finally {
+            finalLoading = false
         }
     }
 
@@ -102,7 +170,8 @@ fun MarksScreen(
             }
             subjectId != null -> {
                 val subject = subjects.firstOrNull { it.optString("subjectId") == subjectId }
-                SubjectMarksDetail(subject)
+                val finalMark = finalMarks.firstOrNull { it.optString("subjectId") == subjectId }
+                SubjectMarksDetail(subject, finalMark)
             }
             mode == "subject" -> {
                 if (subjects.isEmpty()) {
@@ -111,6 +180,17 @@ fun MarksScreen(
                     }
                 } else {
                     LazyColumn(modifier = Modifier.weight(1f)) {
+                        item {
+                            FinalMarksSection(
+                                years = academicYears,
+                                selectedYearId = selectedYearId,
+                                onYearChange = { selectedYearId = it },
+                                marks = finalMarks,
+                                loading = finalLoading,
+                                error = finalError
+                            )
+                            Spacer(Modifier.height(6.dp))
+                        }
                         items(subjects) { subject ->
                             SubjectMarksCard(subject) {
                                 val id = subject.optString("subjectId")
@@ -122,7 +202,16 @@ fun MarksScreen(
                 }
             }
             else -> {
-                DateMarksList(marks, from, to, Modifier.weight(1f))
+                DateMarksList(marks, from, to, Modifier.weight(1f)) {
+                    FinalMarksSection(
+                        years = academicYears,
+                        selectedYearId = selectedYearId,
+                        onYearChange = { selectedYearId = it },
+                        marks = finalMarks,
+                        loading = finalLoading,
+                        error = finalError
+                    )
+                }
             }
         }
     }
@@ -133,14 +222,9 @@ private fun DateMarksList(
     marks: List<JSONObject>,
     from: String,
     to: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    finalSection: @Composable () -> Unit = {}
 ) {
-    if (marks.isEmpty()) {
-        Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text("Оценок за период нет")
-        }
-        return
-    }
     val grouped = remember(marks) {
         marks.groupBy { it.optString("date") }.entries.sortedByDescending { it.key }
     }
@@ -151,26 +235,339 @@ private fun DateMarksList(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(Modifier.height(6.dp))
+        }
+        if (marks.isNotEmpty()) {
+            item {
+                MarksCharts(marks)
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+        item {
+            finalSection()
             Spacer(Modifier.height(4.dp))
         }
-        grouped.forEach { (date, dayMarks) ->
-            item(key = "date-$date") {
-                Text(
-                    MeshCore.dateShort(date),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
-                )
+        if (marks.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Оценок за период нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            items(dayMarks) { mark ->
-                MarkCard(mark, showSubject = true, showDate = false)
+        } else {
+            grouped.forEach { (date, dayMarks) ->
+                item(key = "date-$date") {
+                    Text(
+                        MeshCore.dateShort(date),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                    )
+                }
+                items(dayMarks) { mark ->
+                    MarkCard(mark, showSubject = true, showDate = false)
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ графики --
+
+@Composable
+private fun MarksCharts(marks: List<JSONObject>) {
+    val summary = remember(marks) { MeshCore.summarizeMarks(marks) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        GradeDistributionChart(summary)
+        WeeklyTrendChart(marks)
+    }
+}
+
+@Composable
+private fun GradeDistributionChart(summary: JSONObject) {
+    val buckets = summary.optJSONArray("byValue")?.toObjectList().orEmpty()
+    val maxCount = buckets.maxOfOrNull { it.optInt("count") } ?: 0
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "Распределение оценок",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                "Число оценок каждой отметки",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            if (maxCount == 0) {
+                ChartEmpty("Недостаточно данных для построения графика")
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth().height(136.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    buckets.forEach { bucket ->
+                        val grade = bucket.optInt("value")
+                        val count = bucket.optInt("count")
+                        val height = if (count == 0) 2.dp else (82f * count / maxCount).dp.coerceAtLeast(5.dp)
+                        Column(
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Bottom
+                        ) {
+                            Text(count.toString(), style = MaterialTheme.typography.labelSmall)
+                            Spacer(Modifier.height(4.dp))
+                            Box(
+                                Modifier.width(30.dp).height(height)
+                                    .background(markColor(grade.toDouble()), RoundedCornerShape(6.dp))
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                grade.toString(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private data class TrendPoint(val week: String, val average: Double)
+
+@Composable
+private fun WeeklyTrendChart(marks: List<JSONObject>) {
+    val points = remember(marks) { weeklyAverages(marks) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "Динамика по неделям",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                "Средний балл за неделю · шкала от 2 до 5",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+            if (points.isEmpty()) {
+                ChartEmpty("За выбранный период нет оценок для графика")
+            } else {
+                val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.65f)
+                val lineColor = MaterialTheme.colorScheme.primary
+                val labelStyle = TextStyle(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                val textMeasurer = rememberTextMeasurer()
+                Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+                    val left = 16.dp.toPx()
+                    val right = size.width - 12.dp.toPx()
+                    val top = 22.dp.toPx()
+                    val bottom = size.height - 10.dp.toPx()
+                    (2..5).forEach { grade ->
+                        val y = bottom - (grade - 2) / 3f * (bottom - top)
+                        drawLine(gridColor, Offset(left, y), Offset(right, y), strokeWidth = 1.dp.toPx())
+                    }
+                    fun xAt(index: Int): Float = if (points.size == 1) {
+                        (left + right) / 2f
+                    } else {
+                        left + index * (right - left) / (points.size - 1)
+                    }
+                    fun yAt(value: Double): Float =
+                        bottom - ((value.coerceIn(2.0, 5.0) - 2.0) / 3.0).toFloat() * (bottom - top)
+                    val path = Path()
+                    points.forEachIndexed { index, point ->
+                        val offset = Offset(xAt(index), yAt(point.average))
+                        if (index == 0) path.moveTo(offset.x, offset.y) else path.lineTo(offset.x, offset.y)
+                    }
+                    drawPath(path, lineColor, style = Stroke(width = 3.dp.toPx()))
+                    points.forEachIndexed { index, point ->
+                        drawCircle(lineColor, radius = 5.dp.toPx(), center = Offset(xAt(index), yAt(point.average)))
+                    }
+                    // Балл — прямо внутри графика, над каждой точкой.
+                    points.forEachIndexed { index, point ->
+                        val text = formatMark(point.average)
+                        val layout = textMeasurer.measure(text, labelStyle)
+                        val x = (xAt(index) - layout.size.width / 2f)
+                            .coerceIn(0f, (size.width - layout.size.width).coerceAtLeast(0f))
+                        var y = yAt(point.average) - layout.size.height - 6.dp.toPx()
+                        if (y < 0f) y = yAt(point.average) + 6.dp.toPx()
+                        drawText(textMeasurer, text, topLeft = Offset(x, y), style = labelStyle)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    val visible = if (points.size <= 6) {
+                        points
+                    } else {
+                        listOf(points.first(), points[points.size / 2], points.last())
+                    }
+                    visible.forEach { point ->
+                        Text(
+                            shortDate(point.week),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun weeklyAverages(marks: List<JSONObject>): List<TrendPoint> {
+    val grouped = marks.mapNotNull { mark ->
+        val date = mark.optString("date")
+        val value = mark.nullableDouble("value") ?: return@mapNotNull null
+        if (date.isBlank()) return@mapNotNull null
+        val calendar = MeshCore.parseIso(date)
+        val weekday = calendar.get(Calendar.DAY_OF_WEEK)
+        val daysFromMonday = (weekday + 5) % 7
+        calendar.add(Calendar.DAY_OF_YEAR, -daysFromMonday)
+        val week = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(calendar.time)
+        week to value
+    }.groupBy({ it.first }, { it.second })
+    return grouped.entries.sortedBy { it.key }.takeLast(10).map { (week, values) ->
+        TrendPoint(week, values.average())
+    }
+}
+
+private fun shortDate(iso: String): String =
+    if (iso.length >= 10) iso.substring(8, 10) + "." + iso.substring(5, 7) else iso
+
+@Composable
+private fun ChartEmpty(text: String) {
+    Box(Modifier.fillMaxWidth().height(68.dp), contentAlignment = Alignment.Center) {
+        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+// ----------------------------------------------------------- итоговые оценки --
+
+@Composable
+private fun FinalMarksSection(
+    years: List<JSONObject>,
+    selectedYearId: String?,
+    onYearChange: (String) -> Unit,
+    marks: List<JSONObject>,
+    loading: Boolean,
+    error: String?
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val selectedYear = years.firstOrNull { it.optString("id") == selectedYearId }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Итоговые оценки",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "Годовые и по учебным периодам",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Box {
+                    OutlinedButton(onClick = { menuOpen = true }, enabled = years.isNotEmpty()) {
+                        Text(
+                            selectedYear?.optString("name")?.takeIf { it.isNotBlank() } ?: "Учебный год",
+                            maxLines = 1
+                        )
+                        Text(" ▾")
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        years.forEach { year ->
+                            val name = year.optString("name").ifBlank { year.optString("id") }
+                            DropdownMenuItem(
+                                text = {
+                                    Text(if (year.optBoolean("currentYear")) "$name · текущий" else name)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onYearChange(year.optString("id"))
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            when {
+                loading -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Загружаем итоговые оценки...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                error != null -> Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                marks.isEmpty() -> Text(
+                    "Итоговых оценок за этот год нет",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                else -> marks.forEach { subject -> FinalMarkRow(subject) }
             }
         }
     }
 }
 
 @Composable
-private fun SubjectMarksDetail(subject: JSONObject?) {
+private fun FinalMarkRow(subject: JSONObject) {
+    val name = subject.optString("subjectName").ifBlank { "Предмет" }
+    val yearMark = subject.nullableDouble("yearMark")
+    val periods = subject.optJSONArray("periods")?.toObjectList().orEmpty()
+    val badgeValue = yearMark
+        ?: periods.lastOrNull { it.nullableDouble("value") != null }?.nullableDouble("value")
+    val periodText = periods
+        .mapNotNull { period ->
+            period.nullableDouble("value")?.let {
+                "${period.optString("name").ifBlank { "Период" }}: ${formatMark(it)}"
+            }
+        }
+        .joinToString(" · ")
+    val attestation = subject.nullableDouble("attestationMark")
+        ?.let { "Аттестация: ${formatMark(it)}" }
+    val subtitle = listOfNotNull(periodText.takeIf { it.isNotBlank() }, attestation).joinToString(" · ")
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            if (subtitle.isNotBlank()) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        GradeBadge(formatMark(badgeValue), badgeValue)
+    }
+}
+
+// ------------------------------------------------------------------ предметы --
+
+@Composable
+private fun SubjectMarksDetail(subject: JSONObject?, finalMark: JSONObject? = null) {
     if (subject == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("Предмет не найден")
@@ -181,7 +578,7 @@ private fun SubjectMarksDetail(subject: JSONObject?) {
         subject.optJSONArray("marks")?.toObjectList().orEmpty()
     }
     Column(modifier = Modifier.fillMaxSize()) {
-        SubjectSummaryCard(subject)
+        SubjectSummaryCard(subject, finalMark)
         Spacer(Modifier.height(6.dp))
         if (subjectMarks.isEmpty()) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -189,6 +586,10 @@ private fun SubjectMarksDetail(subject: JSONObject?) {
             }
         } else {
             LazyColumn(modifier = Modifier.weight(1f)) {
+                item {
+                    MarksCharts(subjectMarks)
+                    Spacer(Modifier.height(6.dp))
+                }
                 items(subjectMarks) { mark ->
                     MarkCard(mark, showSubject = false, showDate = true)
                 }
@@ -244,20 +645,40 @@ private fun SubjectMarksCard(subject: JSONObject, onClick: () -> Unit) {
 }
 
 @Composable
-private fun SubjectSummaryCard(subject: JSONObject) {
+private fun SubjectSummaryCard(subject: JSONObject, finalMark: JSONObject? = null) {
     val name = subject.optString("subjectName").ifBlank { "Предмет" }
     val average = subject.nullableDouble("average")
-    val yearMark = subject.nullableDouble("yearMark")
+    val subjectYear = subject.nullableDouble("yearMark")
     val count = subject.optJSONArray("marks")?.length() ?: 0
     val dynamic = subject.optString("dynamic")
+    val periods = finalMark?.optJSONArray("periods")?.toObjectList().orEmpty()
+    val finalValue = finalMark?.nullableDouble("yearMark")
+        ?: periods.lastOrNull { it.nullableDouble("value") != null }?.nullableDouble("value")
+    val periodText = periods
+        .mapNotNull { period ->
+            period.nullableDouble("value")?.let {
+                "${period.optString("name").ifBlank { "Период" }}: ${formatMark(it)}"
+            }
+        }
+        .joinToString(" · ")
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 SummaryStat("Средний", formatMark(average))
-                if (yearMark != null) SummaryStat("Год", formatMark(yearMark))
+                if (subjectYear != null) SummaryStat("Год", formatMark(subjectYear))
+                if (finalValue != null) SummaryStat("Итог", formatMark(finalValue))
                 SummaryStat("Оценок", count.toString())
+            }
+            if (periodText.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    periodText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (dynamic == "UP" || dynamic == "DOWN") {
                 Spacer(Modifier.height(4.dp))

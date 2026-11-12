@@ -415,6 +415,7 @@ fun MainScaffold(
                     store,
                     client,
                     studentId,
+                    personId = personId,
                     subjectId = marksSubjectId,
                     onOpenSubject = { id, name ->
                         if (id.isNotBlank()) {
