@@ -612,17 +612,31 @@ object MeshCore {
         return summary
     }
 
-    fun normalizeMark(mark: JSONObject): JSONObject = JSONObject()
-        .put("id", asString(firstDefined(mark.opt("id"), mark.opt("mark_id"))))
-        .put("value", asNullableDouble(firstDefined(mark.opt("value"), mark.opt("mark"))) ?: JSONObject.NULL)
-        .put("markText", asString(firstDefined(mark.opt("value"), mark.opt("mark"))))
-        .put("subjectId", asString(firstDefined(mark.opt("subject_id"), mark.opt("subjectId"))))
-        .put("subjectName", asString(firstDefined(mark.opt("subject_name"), mark.opt("subjectName"), "—")))
-        .put("controlForm", asString(firstDefined(mark.opt("control_form_name"), mark.opt("controlForm"), "—")))
-        .put("weight", asNullableDouble(mark.opt("weight")) ?: 1.0)
-        .put("date", toIso(asString(firstDefined(mark.opt("created_at"), mark.opt("date"), today()))).take(10))
-        .put("comment", asString(mark.opt("comment")))
-        .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
+    fun normalizeMark(mark: JSONObject): JSONObject {
+        val period = mark.opt("period")
+        val periodObject = period as? JSONObject
+        val periodName = asString(
+            firstDefined(
+                mark.opt("period_name"), mark.opt("periodName"), mark.opt("period_title"), mark.opt("periodTitle"),
+                mark.opt("study_period_name"), mark.opt("academic_period_name"), mark.opt("term_name"),
+                periodObject?.opt("title"), periodObject?.opt("name"), periodObject?.opt("label"),
+                period.takeIf { it is String }
+            )
+        )
+        return JSONObject()
+            .put("id", asString(firstDefined(mark.opt("id"), mark.opt("mark_id"))))
+            .put("value", asNullableDouble(firstDefined(mark.opt("value"), mark.opt("mark"))) ?: JSONObject.NULL)
+            .put("markText", asString(firstDefined(mark.opt("value"), mark.opt("mark"))))
+            .put("subjectId", asString(firstDefined(mark.opt("subject_id"), mark.opt("subjectId"))))
+            .put("subjectName", asString(firstDefined(mark.opt("subject_name"), mark.opt("subjectName"), "—")))
+            .put("controlForm", asString(firstDefined(mark.opt("control_form_name"), mark.opt("controlForm"), "—")))
+            .put("weight", asNullableDouble(mark.opt("weight")) ?: 1.0)
+            .put("date", toIso(asString(firstDefined(mark.opt("created_at"), mark.opt("date"), today()))).take(10))
+            .put("periodId", asString(firstDefined(mark.opt("period_id"), mark.opt("periodId"), mark.opt("term_id"))))
+            .put("periodName", periodName)
+            .put("comment", asString(mark.opt("comment")))
+            .put("isExam", asBool(firstDefined(mark.opt("is_exam"), mark.opt("isExam"))))
+    }
 
     /**
      * Нормализует ответ `/api/family/web/v1/subject_marks`.
@@ -643,19 +657,28 @@ object MeshCore {
             val rawPeriods = item.optJSONArray("periods") ?: JSONArray()
             for (p in 0 until rawPeriods.length()) {
                 val period = rawPeriods.optJSONObject(p) ?: continue
+                val title = asString(firstDefined(period.opt("title"), period.opt("name"), period.opt("period_name")))
+                val periodId = asString(firstDefined(period.opt("period_id"), period.opt("periodId"), period.opt("id")))
                 val periodMarks = JSONArray()
                 val rawMarks = period.optJSONArray("marks") ?: JSONArray()
                 for (m in 0 until rawMarks.length()) {
                     val mark = rawMarks.optJSONObject(m) ?: continue
                     val normalized = normalizeMark(mark)
+                    if (normalized.optString("subjectId").isBlank()) normalized.put("subjectId", subjectId)
+                    if (normalized.optString("subjectName").isBlank() || normalized.optString("subjectName") == "—") {
+                        normalized.put("subjectName", subjectName)
+                    }
+                    if (normalized.optString("periodName").isBlank()) normalized.put("periodName", title)
+                    if (normalized.optString("periodId").isBlank()) normalized.put("periodId", periodId)
                     periodMarks.put(normalized)
                     allMarks.add(normalized)
                 }
                 periods.put(
                     JSONObject()
-                        .put("title", asString(period.opt("title")))
-                        .put("start", asString(period.opt("start")))
-                        .put("end", asString(period.opt("end")))
+                        .put("id", periodId)
+                        .put("title", title)
+                        .put("start", asString(firstDefined(period.opt("start"), period.opt("start_date"), period.opt("date_from"))))
+                        .put("end", asString(firstDefined(period.opt("end"), period.opt("end_date"), period.opt("date_to"))))
                         .put(
                             "value",
                             asNullableDouble(firstDefined(period.opt("value"), period.opt("fixed_value")))
@@ -730,6 +753,146 @@ object MeshCore {
             )
         }
         return result
+    }
+
+    /** Находит официальный учебный период по id оценки или календарным границам. */
+    fun resolveMarkPeriod(mark: JSONObject, subjects: JSONArray): JSONObject {
+        val directName = mark.optString("periodName").trim()
+        if (directName.isNotBlank()) {
+            return JSONObject().put("name", directName).put("approximate", false)
+        }
+
+        val subjectId = mark.optString("subjectId")
+        val subjectName = mark.optString("subjectName")
+        var subject: JSONObject? = null
+        for (index in 0 until subjects.length()) {
+            val candidate = subjects.optJSONObject(index) ?: continue
+            val sameId = subjectId.isNotBlank() && candidate.optString("subjectId") == subjectId
+            val sameName = subjectId.isBlank() && subjectName.isNotBlank() && candidate.optString("subjectName") == subjectName
+            if (sameId || sameName) {
+                subject = candidate
+                break
+            }
+        }
+
+        val periods = subject?.optJSONArray("periods") ?: JSONArray()
+        val markId = mark.optString("id")
+        val markPeriodId = mark.optString("periodId")
+        var matchedPeriod: JSONObject? = null
+        for (index in 0 until periods.length()) {
+            val period = periods.optJSONObject(index) ?: continue
+            if (markPeriodId.isNotBlank() && period.optString("id") == markPeriodId) {
+                matchedPeriod = period
+                break
+            }
+            val periodMarks = period.optJSONArray("marks") ?: JSONArray()
+            val sameMark = (0 until periodMarks.length()).any { markIndex ->
+                val candidate = periodMarks.optJSONObject(markIndex) ?: return@any false
+                val candidateId = candidate.optString("id")
+                val sameId = markId.isNotBlank() && candidateId.isNotBlank() && markId == candidateId
+                if (sameId) {
+                    true
+                } else {
+                    val date = mark.optString("date")
+                    val candidateDate = candidate.optString("date")
+                    val value = asNullableDouble(mark.opt("value"))
+                    val candidateValue = asNullableDouble(candidate.opt("value"))
+                    val form = mark.optString("controlForm")
+                    val candidateForm = candidate.optString("controlForm")
+                    date.isNotBlank() && date == candidateDate && value == candidateValue &&
+                        (form.isBlank() || candidateForm.isBlank() || form == candidateForm)
+                }
+            }
+            if (sameMark) {
+                matchedPeriod = period
+                break
+            }
+        }
+        if (matchedPeriod == null) {
+            for (index in 0 until periods.length()) {
+                val period = periods.optJSONObject(index) ?: continue
+                if (periodContainsDate(period, mark.optString("date"))) {
+                    matchedPeriod = period
+                    break
+                }
+            }
+        }
+        val officialName = matchedPeriod?.optString("title")?.trim().orEmpty()
+        if (officialName.isNotBlank()) {
+            return JSONObject().put("name", officialName).put("approximate", false)
+        }
+
+        val guessed = guessedQuarter(mark.optString("date"))
+        return if (guessed != null) {
+            JSONObject().put("name", "$guessed (ориентировочно)").put("approximate", true)
+        } else {
+            JSONObject().put("name", "Период не определён").put("approximate", true)
+        }
+    }
+
+    /** Добавляет подпись учебного периода к оценкам из журнала. */
+    fun attachMarkPeriods(marks: List<JSONObject>, subjects: JSONArray): List<JSONObject> =
+        marks.map { mark ->
+            val copy = JSONObject(mark.toString())
+            val period = resolveMarkPeriod(copy, subjects)
+            copy.put("periodName", period.optString("name"))
+            copy.put("periodApproximate", period.optBoolean("approximate"))
+            copy
+        }
+
+    private data class PeriodDate(val year: Int?, val month: Int, val day: Int)
+
+    private fun periodDateParts(value: String): PeriodDate? {
+        val text = value.trim()
+        Regex("""^(\d{4})-(\d{1,2})-(\d{1,2})""").find(text)?.let { match ->
+            return PeriodDate(match.groupValues[1].toInt(), match.groupValues[2].toInt(), match.groupValues[3].toInt())
+        }
+        Regex("""^(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?$""").find(text)?.let { match ->
+            return PeriodDate(
+                match.groupValues[3].toIntOrNull(),
+                match.groupValues[2].toInt(),
+                match.groupValues[1].toInt()
+            )
+        }
+        return null
+    }
+
+    private fun periodContainsDate(period: JSONObject, date: String): Boolean {
+        val target = periodDateParts(date) ?: return false
+        val year = target.year ?: return false
+        val start = periodDateParts(period.optString("start")) ?: return false
+        val end = periodDateParts(period.optString("end")) ?: return false
+        var startYear = start.year
+        var endYear = end.year
+        if (startYear == null && endYear == null) {
+            if (start.month > end.month) {
+                when {
+                    target.month <= end.month -> { startYear = year - 1; endYear = year }
+                    target.month >= start.month -> { startYear = year; endYear = year + 1 }
+                    else -> return false
+                }
+            } else {
+                startYear = year
+                endYear = year
+            }
+        } else {
+            if (startYear == null) startYear = year
+            if (endYear == null) endYear = year
+        }
+        fun iso(parts: PeriodDate, targetYear: Int): String =
+            "${targetYear.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}"
+        return date >= iso(start, startYear!!) && date <= iso(end, endYear!!)
+    }
+
+    private fun guessedQuarter(date: String): String? {
+        val month = periodDateParts(date)?.month ?: return null
+        return when (month) {
+            9, 10 -> "1-я четверть"
+            11, 12 -> "2-я четверть"
+            1, 2, 3 -> "3-я четверть"
+            4, 5 -> "4-я четверть"
+            else -> null
+        }
     }
 
     /** Приводит относительную ссылку МЭШ к абсолютному URL. */
@@ -1018,7 +1181,7 @@ object MeshCore {
         return JSONArray(sorted)
     }
 
-    /** Сводка по оценкам: средняя, взвешенная и по предметам. */
+    /** Сводка по оценкам: средние показатели, доли и распределение по предметам. */
     fun summarizeMarks(marks: List<JSONObject>): JSONObject {
         val values = marks.mapNotNull { asNullableDouble(it.opt("value")) }
         var weightedSum = 0.0
@@ -1031,7 +1194,7 @@ object MeshCore {
         }
         val bySubject = linkedMapOf<String, MutableList<JSONObject>>()
         marks.forEach { mark ->
-            val key = mark.optString("subjectId").ifBlank { mark.optString("subjectName") }
+            val key = mark.optString("subjectId").ifBlank { mark.optString("subjectName") }.ifBlank { "—" }
             bySubject.getOrPut(key) { mutableListOf() }.add(mark)
         }
         val subjectList = bySubject.values.map { group ->
@@ -1043,28 +1206,51 @@ object MeshCore {
                 .put("count", group.size)
                 .put("average", average ?: JSONObject.NULL)
                 .put("median", round(median(groupValues), 2) ?: JSONObject.NULL)
+                .put("best", groupValues.maxOrNull() ?: JSONObject.NULL)
+                .put("worst", groupValues.minOrNull() ?: JSONObject.NULL)
                 .put("color", gradeColor(average))
                 .put("marks", JSONArray(group.sortedByDescending { it.optString("date") }))
         }.sortedByDescending { it.optDouble("average", 0.0) }
 
+        val gradeCounts = listOf(5, 4, 3, 2, 1).associateWith { grade ->
+            values.count { Math.round(it).toInt() == grade }
+        }
         val byValue = JSONArray()
-        listOf(5, 4, 3, 2, 1).forEach { value ->
+        gradeCounts.forEach { (value, count) ->
             byValue.put(
                 JSONObject()
                     .put("value", value)
-                    .put("count", values.count { Math.round(it).toInt() == value })
+                    .put("count", count)
                     .put("color", gradeColor(value.toDouble()))
             )
         }
+        val positiveCount = values.count { it >= 3.0 }
+        val standardDeviation = if (values.size > 1) {
+            val average = values.average()
+            kotlin.math.sqrt(values.sumOf { (it - average) * (it - average) } / (values.size - 1))
+        } else null
         val sortedMarks = marks.sortedByDescending { it.optString("date") }
+        val best = values.maxOrNull()
+        val worst = values.minOrNull()
         return JSONObject()
             .put("count", marks.size)
             .put("withValue", values.size)
+            .put("withoutValue", marks.size - values.size)
+            .put("subjectCount", subjectList.size)
             .put("average", round(mean(values), 2) ?: JSONObject.NULL)
             .put("weightedAverage", if (weights > 0) round(weightedSum / weights, 2) ?: JSONObject.NULL else JSONObject.NULL)
             .put("median", round(median(values), 2) ?: JSONObject.NULL)
-            .put("best", values.maxOrNull() ?: JSONObject.NULL)
-            .put("worst", values.minOrNull() ?: JSONObject.NULL)
+            .put("standardDeviation", round(standardDeviation, 2) ?: JSONObject.NULL)
+            .put("best", best ?: JSONObject.NULL)
+            .put("worst", worst ?: JSONObject.NULL)
+            .put("range", if (best != null && worst != null) best - worst else JSONObject.NULL)
+            .put("positiveCount", positiveCount)
+            .put("positiveShare", if (values.isNotEmpty()) positiveCount.toDouble() / values.size else JSONObject.NULL)
+            .put("fivesCount", gradeCounts[5] ?: 0)
+            .put("foursCount", gradeCounts[4] ?: 0)
+            .put("threesCount", gradeCounts[3] ?: 0)
+            .put("twosCount", gradeCounts[2] ?: 0)
+            .put("totalWeight", weights)
             .put("bySubject", JSONArray(subjectList))
             .put("byValue", byValue)
             .put("lastMark", sortedMarks.firstOrNull() ?: JSONObject.NULL)

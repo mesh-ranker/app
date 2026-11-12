@@ -407,6 +407,7 @@ fun MainScaffold(
                     store,
                     client,
                     personId,
+                    studentId,
                     onLogout,
                     selectedSubjectId = rankingSubjectId,
                     onSubjectChange = { rankingSubjectId = it }

@@ -91,7 +91,7 @@ fun ProfileBody(
                     ProfileRow("Школа", school.ifBlank { "—" })
                     val studentEmail = child?.optString("email").orEmpty()
                     val studentPhone = MeshCore.formatPhone(child?.optString("phone"))
-                    if (studentEmail.isNotBlank()) ProfileRow("Email", studentEmail)
+                    if (studentEmail.isNotBlank()) ProfileRow("Электронная почта", studentEmail)
                     if (studentPhone.isNotBlank()) ProfileRow("Телефон", studentPhone)
                 }
 
@@ -109,7 +109,7 @@ fun ProfileBody(
                     ProfileRow("ФИО", parent?.optString("name").orEmpty().ifBlank { "—" })
                     val email = parent?.optString("email").orEmpty()
                     val phone = MeshCore.formatPhone(parent?.optString("phone"))
-                    if (email.isNotBlank()) ProfileRow("Email", email)
+                    if (email.isNotBlank()) ProfileRow("Электронная почта", email)
                     if (phone.isNotBlank()) ProfileRow("Телефон", phone)
                 }
 
@@ -121,8 +121,8 @@ fun ProfileBody(
                         ProfileRow(
                             "Тип",
                             when (info.optString("kind")) {
-                                "jwt" -> "JWT"
-                                "opaque" -> "opaque"
+                                "jwt" -> "Подписанный ключ доступа"
+                                "opaque" -> "Защищённая строка"
                                 else -> "—"
                             }
                         )

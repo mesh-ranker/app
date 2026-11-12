@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Mesh Ranker</string>
+    <string name="app_name">MESH Ranker Test</string>
     <string name="login_title">Вход в МЭШ</string>
 
     <string name="notif_channel_name">Обновление данных МЭШ</string>
