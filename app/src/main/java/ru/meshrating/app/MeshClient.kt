@@ -361,7 +361,8 @@ class MeshClient(
         date: String = MeshCore.today(),
         subjectId: String? = null,
         subjectName: String? = null,
-        names: Map<String, String> = emptyMap()
+        names: Map<String, String> = emptyMap(),
+        monthly: Boolean = false
     ): JSONObject {
         val members = getRank(personId, date, subjectId)
         val ids = (0 until members.length())
@@ -376,12 +377,13 @@ class MeshClient(
         if (missing.isNotEmpty()) {
             getNames(missing).forEach { (id, name) -> resolved[id] = name }
         }
-        val rows = MeshCore.buildRankTable(members, resolved, personId)
+        val rows = MeshCore.buildRankTable(members, resolved, personId, monthly)
         return JSONObject()
             .put("rows", rows)
             .put("summary", MeshCore.summarizeRank(rows, personId))
             .put("date", date)
             .put("subjectId", subjectId ?: JSONObject.NULL)
             .put("subjectName", subjectName ?: JSONObject.NULL)
+            .put("period", if (monthly) "month" else "year")
     }
 }

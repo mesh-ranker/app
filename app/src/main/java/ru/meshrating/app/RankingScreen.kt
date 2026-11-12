@@ -30,10 +30,11 @@ fun RankingScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var subjects by remember { mutableStateOf<List<JSONObject>>(emptyList()) }
     val selectedSubject = selectedSubjectId ?: "all"
+    var period by remember { mutableStateOf("year") }
     var board by remember { mutableStateOf<JSONObject?>(null) }
     val date = MeshCore.today()
 
-    fun load() {
+    fun load(monthlyMode: Boolean) {
         if (personId.isNullOrBlank()) {
             loading = false
             return
@@ -49,7 +50,8 @@ fun RankingScreen(
                         personId = personId,
                         date = date,
                         subjectId = if (selectedSubject == "all") null else selectedSubject,
-                        subjectName = subs.firstOrNull { it.optString("id") == selectedSubject }?.optString("name")
+                        subjectName = subs.firstOrNull { it.optString("id") == selectedSubject }?.optString("name"),
+                        monthly = monthlyMode
                     )
                     subs to b
                 }
@@ -63,9 +65,23 @@ fun RankingScreen(
         }
     }
 
-    LaunchedEffect(personId, date, selectedSubject) { load() }
+    LaunchedEffect(personId, date, selectedSubject, period) { load(period == "month") }
 
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = period == "year",
+                onClick = { period = "year" },
+                label = { Text("Год") }
+            )
+            FilterChip(
+                selected = period == "month",
+                onClick = { period = "month" },
+                label = { Text("Месяц") }
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+
         board?.optJSONObject("summary")?.let { s ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 KpiCard(
@@ -99,12 +115,17 @@ fun RankingScreen(
                 )
             }
             items(subjects) { s ->
+                val subjectAverage = when {
+                    period == "month" && !s.isNull("average30") -> s.optDouble("average30")
+                    !s.isNull("average") -> s.optDouble("average")
+                    else -> null
+                }
                 FilterChip(
                     selected = selectedSubject == s.optString("id"),
                     onClick = { onSubjectChange(s.optString("id").takeIf { it.isNotBlank() }) },
                     label = {
                         Text(
-                            s.optString("name") + " · " + formatMark(if (s.isNull("average")) null else s.optDouble("average")),
+                            s.optString("name") + " · " + formatMark(subjectAverage),
                             maxLines = 1
                         )
                     }
@@ -130,7 +151,7 @@ fun RankingScreen(
                 Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center) {
                     Text(error!!, color = MaterialTheme.colorScheme.error)
                     Spacer(Modifier.height(8.dp))
-                    Button(onClick = { load() }) { Text("Повторить") }
+                    Button(onClick = { load(period == "month") }) { Text("Повторить") }
                 }
             }
             else -> {
@@ -177,6 +198,10 @@ fun RankingScreen(
                                                     when (status) {
                                                         "TOP" -> "сильный"
                                                         "MIDDLE" -> "средний"
+                                                        "up" -> "рост"
+                                                        "down" -> "снижение"
+                                                        "stable" -> "стабильно"
+                                                        "NO_DATA" -> "нет данных"
                                                         else -> status
                                                     }
                                                 )

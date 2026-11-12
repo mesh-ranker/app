@@ -418,9 +418,13 @@ object MeshCore {
             .put("id", asString(firstDefined(subject.opt("subjectId"), subject.opt("subject_id"), subject.opt("id"))))
             .put("name", asString(firstDefined(subject.opt("subjectName"), subject.opt("subject_name"), subject.opt("name"), "Предмет")))
             .put("average", asNullableDouble(firstDefined(rank.opt("averageMarkFive"), subject.opt("averageMarkFive"))) ?: JSONObject.NULL)
+            .put("average30", asNullableDouble(firstDefined(rank.opt("averageMarkFive30"), subject.opt("averageMarkFive30"))) ?: JSONObject.NULL)
             .put("place", asNullableInt(firstDefined(rank.opt("rankPlace"), rank.opt("place"))) ?: JSONObject.NULL)
+            .put("place30", asNullableInt(firstDefined(rank.opt("rankPlace30"), rank.opt("place30"))) ?: JSONObject.NULL)
             .put("status", asString(rank.opt("rankStatus")))
+            .put("status30", asString(rank.opt("rankStatus30")))
             .put("trend", asString(rank.opt("trend")))
+            .put("trend30", asString(rank.opt("trend30")))
             .put("isExam", asBool(firstDefined(subject.opt("isExam"), subject.opt("is_exam"))))
     }
 
@@ -428,17 +432,69 @@ object MeshCore {
      * Таблица рейтинга класса: имена, место, «это я», дельты.
      * Соответствует shared/core/mesh-core.js → buildRankTable.
      */
-    fun buildRankTable(members: JSONArray, names: Map<String, String>, meId: String?): JSONArray {
+    fun buildRankTable(
+        members: JSONArray,
+        names: Map<String, String>,
+        meId: String?,
+        monthly: Boolean = false
+    ): JSONArray {
         val rows = mutableListOf<JSONObject>()
         for (i in 0 until members.length()) {
             val member = members.optJSONObject(i) ?: continue
             val rank = member.optJSONObject("rank") ?: JSONObject()
             val previous = member.optJSONObject("previousRank") ?: member.optJSONObject("previous_rank") ?: JSONObject()
             val personId = asString(firstDefined(member.opt("personId"), member.opt("person_id")))
-            val average = asNullableDouble(firstDefined(rank.opt("averageMarkFive"), rank.opt("average_mark"), member.opt("averageMarkFive")))
-            val previousAverage = asNullableDouble(firstDefined(previous.opt("averageMarkFive"), previous.opt("average_mark")))
-            val place = asNullableInt(firstDefined(rank.opt("rankPlace"), rank.opt("place"))) ?: (i + 1)
-            val previousPlace = asNullableInt(firstDefined(previous.opt("rankPlace"), previous.opt("place")))
+
+            // В режиме «Месяц» МЭШ отдаёт те же показатели с суффиксом 30:
+            // averageMarkFive30 / rankPlace30 / rankStatus30 / trend30.
+            val average = if (monthly) {
+                asNullableDouble(
+                    firstDefined(
+                        rank.opt("averageMarkFive30"),
+                        rank.opt("averageMarkFive"),
+                        rank.opt("average_mark"),
+                        member.opt("averageMarkFive")
+                    )
+                )
+            } else {
+                asNullableDouble(
+                    firstDefined(rank.opt("averageMarkFive"), rank.opt("average_mark"), member.opt("averageMarkFive"))
+                )
+            }
+            val previousAverage = if (monthly) {
+                asNullableDouble(
+                    firstDefined(
+                        previous.opt("averageMarkFive30"),
+                        previous.opt("averageMarkFive"),
+                        previous.opt("average_mark")
+                    )
+                )
+            } else {
+                asNullableDouble(firstDefined(previous.opt("averageMarkFive"), previous.opt("average_mark")))
+            }
+            val place = if (monthly) {
+                asNullableInt(firstDefined(rank.opt("rankPlace30"), rank.opt("rankPlace"), rank.opt("place")))
+                    ?: (i + 1)
+            } else {
+                asNullableInt(firstDefined(rank.opt("rankPlace"), rank.opt("place"))) ?: (i + 1)
+            }
+            val previousPlace = if (monthly) {
+                asNullableInt(
+                    firstDefined(previous.opt("rankPlace30"), previous.opt("rankPlace"), previous.opt("place"))
+                )
+            } else {
+                asNullableInt(firstDefined(previous.opt("rankPlace"), previous.opt("place")))
+            }
+            val status = if (monthly) {
+                asString(firstDefined(rank.opt("rankStatus30"), rank.opt("rankStatus")))
+            } else {
+                asString(rank.opt("rankStatus"))
+            }
+            val trendName = if (monthly) {
+                asString(firstDefined(rank.opt("trend30"), rank.opt("trend")))
+            } else {
+                asString(rank.opt("trend"))
+            }
 
             val placeDelta = if (previousPlace == null) null else previousPlace - place
             val averageDelta = if (average == null || previousAverage == null) null else round(average - previousAverage, 2)
@@ -453,8 +509,8 @@ object MeshCore {
                     .put("imageId", asString(firstDefined(member.opt("imageId"), member.opt("image_id"))))
                     .put("place", place)
                     .put("average", average ?: JSONObject.NULL)
-                    .put("status", asString(rank.opt("rankStatus")))
-                    .put("trend", asString(rank.opt("trend")))
+                    .put("status", status)
+                    .put("trend", trendName)
                     .put("previousPlace", previousPlace ?: JSONObject.NULL)
                     .put("previousAverage", previousAverage ?: JSONObject.NULL)
                     .put("placeDelta", placeDelta ?: JSONObject.NULL)

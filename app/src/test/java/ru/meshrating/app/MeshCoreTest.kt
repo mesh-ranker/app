@@ -92,6 +92,29 @@ class MeshCoreTest {
     }
 
     @Test
+    fun `buildRankTable в месячном режиме использует показатели 30`() {
+        val members = JSONArray(
+            """[
+              {"personId": "a",
+               "rank": {"averageMarkFive": 4.0, "rankPlace": 5, "averageMarkFive30": 4.8, "rankPlace30": 1, "rankStatus30": "up"},
+               "previousRank": {"averageMarkFive": 3.9, "rankPlace": 4, "averageMarkFive30": 4.5, "rankPlace30": 2}},
+              {"personId": "b",
+               "rank": {"averageMarkFive": 4.5, "rankPlace": 1, "averageMarkFive30": 3.9, "rankPlace30": 2, "rankStatus30": "down"},
+               "previousRank": {"averageMarkFive": 4.4, "rankPlace": 1, "averageMarkFive30": 4.0, "rankPlace30": 1}}
+            ]"""
+        )
+
+        val rows = MeshCore.buildRankTable(members, emptyMap(), "a", monthly = true)
+        val first = rows.getJSONObject(0)
+        assertEquals("a", first.getString("personId"))
+        assertEquals(1, first.getInt("place"))
+        assertEquals(4.8, first.getDouble("average"), 0.001)
+        assertEquals("up", first.getString("status"))
+        assertEquals(1, first.getInt("placeDelta")) // был 2-м, стал 1-м
+        assertEquals(0.3, first.getDouble("averageDelta"), 0.001)
+    }
+
+    @Test
     fun `summarizeRank считает сводку по классу`() {
         val members = JSONArray(
             """[

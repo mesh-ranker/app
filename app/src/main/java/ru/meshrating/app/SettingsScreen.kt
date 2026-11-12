@@ -1,11 +1,14 @@
 package ru.meshrating.app
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -16,9 +19,13 @@ import org.json.JSONObject
 @Composable
 fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?, onLogout: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var refreshing by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var checkingUpdates by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var updateMessage by remember { mutableStateOf<String?>(null) }
     val tokenInfo = MeshCore.describeToken(store.token)
 
     Column(
@@ -34,6 +41,35 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
                 SettingsRow("Сервер", MeshCore.HOST.removePrefix("https://"))
                 SettingsRow("Хранилище", if (store.isEncrypted()) "зашифровано" else "приватное")
                 SettingsRow("Кэш имён", "включён")
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = {
+                        if (!checkingUpdates) {
+                            checkingUpdates = true
+                            updateMessage = null
+                            scope.launch {
+                                val found = withContext(Dispatchers.IO) { UpdateChecker.check(context) }
+                                store.lastUpdateCheck = System.currentTimeMillis()
+                                updateInfo = found
+                                updateMessage = if (found == null) "Обновлений нет" else null
+                                checkingUpdates = false
+                            }
+                        }
+                    },
+                    enabled = !checkingUpdates,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (checkingUpdates) CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    else Text("Проверить обновления сейчас")
+                }
+                updateMessage?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         }
 
@@ -108,6 +144,33 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
                 }
             }
         }
+    }
+
+    updateInfo?.let { info ->
+        AlertDialog(
+            onDismissRequest = { updateInfo = null },
+            title = { Text("Доступно обновление") },
+            text = {
+                Text("На GitHub уже есть версия ${info.versionName}. Можно скачать и установить её.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        updateInfo = null
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                        }
+                    }
+                ) {
+                    Text("Скачать")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { updateInfo = null }) {
+                    Text("Позже")
+                }
+            }
+        )
     }
 }
 
