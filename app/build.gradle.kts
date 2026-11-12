@@ -6,6 +6,14 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// Версия задаётся CI через переменные окружения. Локально остаются значения по умолчанию.
+val buildVersionCode = providers.environmentVariable("VERSION_CODE").orNull
+    ?.toIntOrNull()
+    ?: 1
+val buildVersionName = providers.environmentVariable("VERSION_NAME").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: "1.0.0"
+
 android {
     namespace = "ru.meshrating.app"
     compileSdk = 35
@@ -14,8 +22,8 @@ android {
         applicationId = "ru.meshrating.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = buildVersionCode
+        versionName = buildVersionName
 
         // Интерфейс и ядро лежат в общем каталоге репозитория (shared/ui, shared/core)
         // и копируются в assets скриптом android/tools/sync-ui.sh
