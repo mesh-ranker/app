@@ -1,6 +1,7 @@
 'use strict';
 const A = window.AppAPI;
 const VIEWS = {};
+const PRIMARY_NAV_ORDER = ['schedule', 'marks', 'homeworks', 'ranking'];
 let instances = {};
 let currentView = null;
 let appState = null;
@@ -18,14 +19,17 @@ function registerView(id, def) { VIEWS[id] = def; }
 function renderNav() {
   const nav = document.getElementById('nav');
   nav.innerHTML = '';
-  Object.keys(VIEWS).forEach((id) => {
+  PRIMARY_NAV_ORDER.forEach((id) => {
     const v = VIEWS[id];
+    if (!v) return;
     const li = document.createElement('li');
     li.className = 'nav-item';
     const a = document.createElement('a');
     a.className = 'nav-link' + (id === currentView ? ' active' : '');
     a.href = '#';
-    a.innerHTML = '<i class="bi ' + v.icon + ' me-1"></i>' + v.title;
+    const icon = document.createElement('i');
+    icon.className = 'bi ' + v.icon + ' me-1';
+    a.append(icon, document.createTextNode(v.navTitle || v.title));
     a.onclick = (e) => { e.preventDefault(); go(id); };
     li.appendChild(a);
     nav.appendChild(li);
@@ -151,6 +155,8 @@ async function startShell() {
   const initial = (s.lastView && VIEWS[s.lastView]) ? s.lastView : (s.defaultView && VIEWS[s.defaultView] ? s.defaultView : 'ranking');
   go(initial);
   document.getElementById('btn-refresh').onclick = () => { const inst = instances[currentView]; if (inst && inst.refresh) inst.refresh(); };
+  document.getElementById('btn-profile').onclick = () => go('profile');
+  document.getElementById('btn-settings').onclick = () => go('settings');
   document.getElementById('btn-logout').onclick = () => {
     if (!confirm('Выйти из МЭШ и удалить токен?')) return;
     A.clearToken(); A.setProfile(null); A.setActiveStudentId(null);

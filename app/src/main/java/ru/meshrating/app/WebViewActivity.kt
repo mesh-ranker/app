@@ -50,8 +50,7 @@ class WebViewActivity : AppCompatActivity() {
             return@registerForActivityResult
         }
         val token = result.data?.getStringExtra(MeshLoginActivity.EXTRA_TOKEN) ?: return@registerForActivityResult
-        val source = result.data?.getStringExtra(MeshLoginActivity.EXTRA_SOURCE) ?: "МЭШ"
-        signIn(token, source)
+        signIn(token)
     }
 
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -185,13 +184,13 @@ class WebViewActivity : AppCompatActivity() {
         return super.onOptionsItemSelected(item)
     }
 
-    private fun signIn(token: String, source: String) {
+    private fun signIn(token: String) {
         binding.progress.visibility = View.VISIBLE
         scope.launch {
             val envelope = withContext(Dispatchers.IO) { api.handle("signIn", JSONObject().put("token", token).toString()) }
             binding.progress.visibility = View.GONE
             if (envelope.optBoolean("ok")) {
-                Toast.makeText(this@WebViewActivity, "Вход выполнен ($source)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@WebViewActivity, "Вход выполнен", Toast.LENGTH_SHORT).show()
                 updateTitle()
                 bridge.emitEvent("state", api.stateJson())
                 binding.webView.reload()

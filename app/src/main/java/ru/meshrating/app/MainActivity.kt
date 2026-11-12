@@ -172,10 +172,7 @@ fun AppRoot(store: SessionStore, activity: MainActivity) {
             onDismissRequest = { updateInfo = null },
             title = { Text("Доступно обновление") },
             text = {
-                Text(
-                    "На GitHub уже есть версия ${info.versionName}. " +
-                        "Можно скачать и установить её по ссылке."
-                )
+                Text("Доступна новая версия ${info.versionName}. Её можно скачать и установить.")
             },
             confirmButton = {
                 TextButton(
@@ -380,10 +377,10 @@ fun MainScaffold(
         bottomBar = {
             NavigationBar {
                 val items = listOf(
-                    Triple("ranking", "Рейтинг", R.drawable.ic_nav_ranking),
+                    Triple("schedule", "Расписание", R.drawable.ic_nav_schedule),
                     Triple("marks", "Оценки", R.drawable.ic_nav_marks),
                     Triple("homeworks", "ДЗ", R.drawable.ic_nav_homeworks),
-                    Triple("schedule", "Расписание", R.drawable.ic_nav_schedule)
+                    Triple("ranking", "Рейтинг", R.drawable.ic_nav_ranking)
                 )
                 items.forEach { (key, label, iconRes) ->
                     NavigationBarItem(
@@ -407,6 +404,7 @@ fun MainScaffold(
                     store,
                     client,
                     personId,
+                    studentId,
                     onLogout,
                     selectedSubjectId = rankingSubjectId,
                     onSubjectChange = { rankingSubjectId = it }

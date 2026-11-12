@@ -51,5 +51,5 @@
     }
     return { el: rootEl, show: () => load(), hide:()=>{}, refresh:()=>load(true) };
   }
-  window.App.registerView('homeworks', { title:'Домашние задания', icon:'bi-journal-text', hint:'Задания за период', create });
+  window.App.registerView('homeworks', { title:'Домашние задания', navTitle:'ДЗ', icon:'bi-journal-text', hint:'Задания за период', create });
 })();

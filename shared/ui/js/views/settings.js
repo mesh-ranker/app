@@ -16,7 +16,17 @@
       const themeRow = document.createElement('div'); themeRow.className='mb-3';
       themeRow.innerHTML = '<label class="form-label small">Тема</label>';
       const themeSel = document.createElement('select'); themeSel.className='form-select form-select-sm'; themeSel.style.width='auto';
-      ['auto','dark','light'].forEach(t => { const o=document.createElement('option'); o.value=t; o.textContent=t; if(s.theme===t) o.selected=true; themeSel.appendChild(o); });
+      [
+        { value: 'auto', label: 'Автоматически' },
+        { value: 'dark', label: 'Тёмная' },
+        { value: 'light', label: 'Светлая' }
+      ].forEach(theme => {
+        const o = document.createElement('option');
+        o.value = theme.value;
+        o.textContent = theme.label;
+        if (s.theme === theme.value) o.selected = true;
+        themeSel.appendChild(o);
+      });
       themeSel.onchange = () => { A.setSettings({theme:themeSel.value}); applyTheme(themeSel.value); };
       themeRow.appendChild(themeSel);
       body.appendChild(themeRow);
@@ -48,8 +58,8 @@
       body.appendChild(arRow);
 
       const apiRow = document.createElement('div'); apiRow.className='mb-3';
-      apiRow.innerHTML = '<label class="form-label small">URL сервера (для GitHub Pages). Пусто = прямой режим</label>';
-      const apiInp = document.createElement('input'); apiInp.type='text'; apiInp.className='form-control form-control-sm'; apiInp.placeholder='https://your-vps:8787'; apiInp.value=A.getApiBase();
+      apiRow.innerHTML = '<label class="form-label small">Адрес сервера для публикации интерфейса. Оставьте пустым для прямого подключения.</label>';
+      const apiInp = document.createElement('input'); apiInp.type='text'; apiInp.className='form-control form-control-sm'; apiInp.placeholder='https://сервер:8787'; apiInp.value=A.getApiBase();
       apiInp.onchange = () => A.setApiBase(apiInp.value);
       apiRow.appendChild(apiInp);
       body.appendChild(apiRow);

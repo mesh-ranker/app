@@ -4,7 +4,7 @@
   const App = window.App;
 
   function subjectKey(id) { return id ? String(id) : 'all'; }
-  function fmt(v) { return (v === null || v === undefined) ? '—' : Number(v).toFixed(2).replace(/\.?0+$/, ''); }
+  function fmt(v) { return (v === null || v === undefined || !isFinite(Number(v))) ? '—' : Number(v).toFixed(2).replace(/\.?0+$/, '').replace('.', ','); }
   function dateRu(iso) { try { return new Date(iso).toLocaleDateString('ru-RU'); } catch (e) { return iso; } }
   function gradeColor(v) { if (v == null) return ''; if (v >= 4.5) return 'text-success'; if (v >= 3.5) return 'text-warning'; return 'text-danger'; }
   function schoolYearStart(iso) { const d = new Date(iso); const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; return y + '-09-01'; }
@@ -15,6 +15,10 @@
       subjects: [],
       selected: ['all'],
       boards: {},
+      markSummary: null,
+      markStatsLoading: false,
+      markStatsError: false,
+      requestId: 0,
       loading: false,
       error: null,
       onlyMyClass: (A.getSettings().onlyMyClass !== false)
@@ -24,9 +28,10 @@
     const rootEl = document.createElement('div');
     const controlsHost = document.createElement('div');
     const kpiHost = document.createElement('div');
+    const marksStatsHost = document.createElement('div');
     const summaryHost = document.createElement('div');
     const boardsHost = document.createElement('div');
-    rootEl.append(controlsHost, kpiHost, summaryHost, boardsHost);
+    rootEl.append(controlsHost, kpiHost, marksStatsHost, summaryHost, boardsHost);
 
     function student() { return ctx.student ? ctx.student() : null; }
 
@@ -137,6 +142,79 @@
       kpiHost.appendChild(grid);
     }
 
+    function renderMarkStatistics() {
+      marksStatsHost.innerHTML = '';
+      const card = document.createElement('section');
+      card.className = 'card mb-3';
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      const title = document.createElement('h5');
+      title.className = 'h6 mb-1';
+      title.textContent = 'Статистика оценок';
+      const selectedIds = state.selected.filter(id => String(id) !== 'all');
+      const selectedNames = selectedIds.map(id => {
+        const subject = state.subjects.find(item => String(item.id) === String(id));
+        return subject ? subject.name : '';
+      }).filter(Boolean);
+      const scope = state.selected.includes('all') || !selectedIds.length
+        ? 'все предметы'
+        : selectedNames.length === 1 ? selectedNames[0] : 'выбранные предметы';
+      const range = document.createElement('div');
+      range.className = 'small text-secondary mb-2';
+      range.textContent = 'Последние 30 дней · ' + dateRu(A.addDays(state.date, -29)) + ' — ' + dateRu(state.date) + ' · ' + scope;
+      body.append(title, range);
+
+      if (state.markStatsLoading) {
+        const loading = document.createElement('div');
+        loading.className = 'small text-secondary';
+        loading.textContent = 'Загружаем статистику оценок…';
+        body.appendChild(loading);
+      } else if (state.markStatsError || !state.markSummary) {
+        const unavailable = document.createElement('div');
+        unavailable.className = 'small text-secondary';
+        unavailable.textContent = 'Статистика оценок временно недоступна.';
+        body.appendChild(unavailable);
+      } else if (!state.markSummary.withValue) {
+        const empty = document.createElement('div');
+        empty.className = 'small text-secondary';
+        empty.textContent = 'За выбранный период оценок нет.';
+        body.appendChild(empty);
+      } else {
+        const summary = state.markSummary;
+        const count = summary.withValue || 0;
+        const positivePercent = summary.positiveShare == null ? '—' : Math.round(summary.positiveShare * 100) + '%';
+        const metrics = [
+          { label: 'Средний балл', value: fmt(summary.average), note: 'Среднее арифметическое' },
+          { label: 'Взвешенное среднее', value: fmt(summary.weightedAverage), note: 'С учётом веса работы' },
+          { label: 'Медиана', value: fmt(summary.median), note: 'Центральное значение' },
+          { label: 'Доля положительных', value: positivePercent, note: (summary.positiveCount || 0) + ' из ' + count + ' оценок' },
+          { label: 'Размах', value: fmt(summary.range), note: 'Максимум минус минимум' },
+          { label: 'Стандартное отклонение', value: fmt(summary.standardDeviation), note: 'Разброс относительно среднего' }
+        ];
+        const grid = document.createElement('div');
+        grid.className = 'kpi-grid rating-marks-kpi-grid';
+        metrics.forEach(metric => {
+          const item = document.createElement('div');
+          item.className = 'stat-card rating-marks-stat-card';
+          const label = document.createElement('div');
+          label.className = 'small text-secondary';
+          label.textContent = metric.label;
+          const value = document.createElement('div');
+          value.className = 'stat-value';
+          value.textContent = metric.value;
+          if (metric.label === 'Средний балл') value.classList.add(gradeColor(summary.average));
+          const note = document.createElement('div');
+          note.className = 'small text-secondary';
+          note.textContent = metric.note;
+          item.append(label, value, note);
+          grid.appendChild(item);
+        });
+        body.appendChild(grid);
+      }
+      card.appendChild(body);
+      marksStatsHost.appendChild(card);
+    }
+
     function renderComparison() {
       const keys = state.selected.map(subjectKey);
       if (keys.length < 2) return null;
@@ -204,7 +282,7 @@
       btns.className = 'mb-2 d-flex gap-2';
       const btnCsv = document.createElement('button');
       btnCsv.className = 'btn btn-sm btn-outline-secondary';
-      btnCsv.innerHTML = '<i class="bi bi-download"></i> CSV';
+      btnCsv.innerHTML = '<i class="bi bi-download"></i> Скачать таблицу';
       btnCsv.onclick = () => exportCsv(title, board);
       btns.appendChild(btnCsv);
       const btnCopy = document.createElement('button');
@@ -224,6 +302,7 @@
         const tr = document.createElement('tr');
         if (row.isMe) tr.classList.add('table-primary');
         const placeDelta = row.placeDelta ? (row.placeDelta > 0 ? '▲' + row.placeDelta : '▼' + Math.abs(row.placeDelta)) : '';
+        const statusName = row.status === 'TOP' ? 'высокий' : row.status === 'MIDDLE' ? 'средний' : row.status === 'BOTTOM' ? 'ниже среднего' : '—';
         tr.innerHTML = `
           <td>${row.place == null ? '—' : row.place} <small class="text-secondary">${placeDelta}</small></td>
           <td>${row.isMe ? '<span class="badge bg-primary me-1">я</span>' : ''}${A.escapeHtml(row.name)}</td>
@@ -231,7 +310,7 @@
           <td class="text-secondary">${fmt(row.previousAverage)}</td>
           <td>${row.averageDelta == null ? '—' : fmt(row.averageDelta)}</td>
           <td><div class="bar" style="width:80px"><div class="bar-fill" style="width:${Math.round(((row.average || 0) / 5) * 100)}%"></div></div></td>
-          <td><span class="badge ${row.status === 'TOP' ? 'bg-success' : row.status === 'MIDDLE' ? 'bg-secondary' : 'bg-warning'}">${row.status === 'TOP' ? 'сильный' : row.status === 'MIDDLE' ? 'средний' : (row.status || '—')}</span></td>`;
+          <td><span class="badge ${row.status === 'TOP' ? 'bg-success' : row.status === 'MIDDLE' ? 'bg-secondary' : 'bg-warning'}">${statusName}</span></td>`;
         tr.style.cursor = 'pointer';
         tr.onclick = () => openStudentModal(row, board, title);
         tbody.appendChild(tr);
@@ -321,7 +400,7 @@
       const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'rating.csv'; a.click();
+      a.href = url; a.download = 'рейтинг.csv'; a.click();
       URL.revokeObjectURL(url);
     }
 
@@ -333,6 +412,7 @@
     function render() {
       renderControls();
       renderKpis();
+      renderMarkStatistics();
       summaryHost.innerHTML = '';
       boardsHost.innerHTML = '';
       if (state.error) {
@@ -362,31 +442,66 @@
     function load(force) {
       const child = student();
       if (!child) {
+        state.requestId++;
+        state.markSummary = null;
+        state.markStatsLoading = false;
+        state.markStatsError = false;
+        state.loading = false;
         state.error = 'Не выбран ученик — обновите профиль или войдите заново.';
         render();
         return Promise.resolve();
       }
+      const requestId = ++state.requestId;
       state.loading = true;
+      state.markSummary = null;
+      state.markStatsLoading = true;
+      state.markStatsError = false;
       state.error = null;
       render();
       let subjectsPromise = (state.subjects.length && !force)
         ? Promise.resolve()
         : A.api('/api/subjects?studentId=' + encodeURIComponent(child.id) + '&date=' + encodeURIComponent(state.date) + '&personId=' + encodeURIComponent(child.personId))
-            .then(res => { state.subjects = res.subjects || []; });
+            .then(res => { if (requestId === state.requestId) state.subjects = res.subjects || []; });
 
       return subjectsPromise.then(() => {
+        if (requestId !== state.requestId) return;
         const reqs = state.selected.map(sid => {
           const key = subjectKey(sid);
           const subject = (state.subjects || []).find(s => String(s.id) === String(sid));
           return A.api('/api/rank?studentId=' + encodeURIComponent(child.id) + '&personId=' + encodeURIComponent(child.personId) + '&date=' + encodeURIComponent(state.date) + (sid === 'all' ? '' : '&subjectId=' + encodeURIComponent(sid) + '&subjectName=' + encodeURIComponent(subject ? subject.name : '')))
-            .then(board => { state.boards[key] = board; });
+            .then(board => { if (requestId === state.requestId) state.boards[key] = board; });
         });
-        return Promise.all(reqs);
+        const from = A.addDays(state.date, -29);
+        const marksUrl = '/api/marks?studentId=' + encodeURIComponent(child.id) +
+          '&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(state.date);
+        const marksPromise = A.api(marksUrl).then(response => {
+          if (requestId !== state.requestId) return;
+          const marks = response.marks || [];
+          const selectedIds = state.selected.filter(id => String(id) !== 'all').map(String);
+          const selectedNames = (state.subjects || [])
+            .filter(subject => selectedIds.includes(String(subject.id)))
+            .map(subject => subject.name);
+          const selectedMarks = state.selected.includes('all') || !selectedIds.length
+            ? marks
+            : marks.filter(mark => selectedIds.includes(String(mark.subjectId)) || selectedNames.includes(mark.subjectName));
+          state.markSummary = window.MeshCore.summarizeMarks(selectedMarks);
+          state.markStatsError = false;
+        }).catch(() => {
+          if (requestId === state.requestId) {
+            state.markSummary = null;
+            state.markStatsError = true;
+          }
+        });
+        return Promise.all([...reqs, marksPromise]);
       }).catch(e => {
-        state.error = e.message || String(e);
-        A.toast('Рейтинг не загрузился', 'error');
+        if (requestId === state.requestId) {
+          state.error = e.message || String(e);
+          A.toast('Рейтинг не загрузился', 'error');
+        }
       }).then(() => {
+        if (requestId !== state.requestId) return;
         state.loading = false;
+        state.markStatsLoading = false;
         const hasShort = state.selected.some(sid => {
           const b = state.boards[subjectKey(sid)];
           return b && (b.rows || []).some(r => String(r.name || '').indexOf('Ученик ') === 0);

@@ -28,15 +28,15 @@
       const body2 = document.createElement('div'); body2.className='card-body';
       body2.innerHTML = '<h6>Токен МЭШ</h6>';
       const t = A.getToken();
-      body2.innerHTML += `<div class="small text-secondary mb-2">Токен хранится в браузере (localStorage). Маска: ${t ? t.slice(0,8)+'…' : '—'}</div>`;
+      body2.innerHTML += `<div class="small text-secondary mb-2">Ключ доступа хранится локально в данных браузера. Маска: ${A.escapeHtml(t ? t.slice(0,8)+'…' : '—')}</div>`;
       const btnRefresh = document.createElement('button'); btnRefresh.className='btn btn-sm btn-outline-secondary me-2'; btnRefresh.textContent='Обновить токен'; btnRefresh.onclick = async () => {
         try { await A.api('/api/refresh-token', { method:'POST' }); A.toast('Токен обновлён','success'); }
         catch(e){ A.toast(e.message,'error'); }
       };
-      const btnExport = document.createElement('button'); btnExport.className='btn btn-sm btn-outline-secondary me-2'; btnExport.textContent='Экспорт профиля JSON';
+      const btnExport = document.createElement('button'); btnExport.className='btn btn-sm btn-outline-secondary me-2'; btnExport.textContent='Скачать данные профиля';
       btnExport.onclick = () => {
         const blob = new Blob([JSON.stringify(profile||{},null,2)], {type:'application/json'});
-        const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='profile.json'; a.click(); URL.revokeObjectURL(url);
+        const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='профиль.json'; a.click(); URL.revokeObjectURL(url);
       };
       const btnLogout = document.createElement('button'); btnLogout.className='btn btn-sm btn-outline-danger'; btnLogout.textContent='Выйти';
       btnLogout.onclick = () => {
