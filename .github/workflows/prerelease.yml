@@ -1,8 +1,8 @@
-name: Android pre-release
+name: Linux and Android pre-release
 
 on:
   push:
-    branches: [test-branch-lexus]
+    branches: [test-branch-lexus, linux-app]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +15,7 @@ concurrency:
 jobs:
   build:
     name: Build and publish pre-release APK
+    if: github.ref == 'refs/heads/test-branch-lexus'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -53,6 +54,53 @@ jobs:
           prerelease: true
           generate_release_notes: true
           files: mesh-ranker-${{ env.VERSION_NAME }}.apk
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux:
+    name: Build native Linux packages
+    if: github.ref == 'refs/heads/linux-app' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set build version
+        run: |
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "VERSION_NAME=1.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Install Linux packaging tools
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg rpm libfuse2
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build .deb and AppImage
+        run: ./gradlew --no-daemon --warning-mode all :linuxApp:packageReleaseDeb :linuxApp:packageReleaseAppImage
+
+      - name: Prepare Linux artifacts
+        run: |
+          cp linuxApp/build/compose/binaries/main-release/deb/*.deb "mesh-ranker-${VERSION_NAME}-amd64.deb"
+          cp linuxApp/build/compose/binaries/main-release/app/*.AppImage "mesh-ranker-${VERSION_NAME}-x86_64.AppImage"
+
+      - name: Publish Linux GitHub pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: linux-app-${{ github.run_number }}
+          name: MESH Ranker ${{ env.VERSION_NAME }}
+          prerelease: true
+          generate_release_notes: true
+          files: |
+            mesh-ranker-${{ env.VERSION_NAME }}-amd64.deb
+            mesh-ranker-${{ env.VERSION_NAME }}-x86_64.AppImage
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

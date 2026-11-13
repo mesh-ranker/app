@@ -2,3 +2,8 @@
 keystore.properties
 *.jks
 *.keystore
+.gradle/
+build/
+app/build/
+linuxApp/build/
+out/
