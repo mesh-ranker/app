@@ -75,10 +75,10 @@ private fun LinuxApp() {
                         val api = MeshClient(token = token.trim())
                         val result = withContext(Dispatchers.IO) { api.signIn(token.trim()) }
                         val profile = result.optJSONObject("profile") ?: withContext(Dispatchers.IO) { api.fetchProfile() }
-                        val child = profile.optJSONArray("children")?.optJSONObject(0) ?: error("В профиле не найден ученик")
-                        val student = child.optString("id").takeIf { it.isNotBlank() } ?: error("Нет ID ученика")
+                        val child = profile.optJSONArray("children")?.optJSONObject(0) ?: kotlin.error("В профиле не найден ученик")
+                        val student = child.optString("id").takeIf { it.isNotBlank() } ?: kotlin.error("Нет ID ученика")
                         val person = (child.optString("personId").takeIf { it.isNotBlank() }
-                            ?: child.optString("contingent_guid").takeIf { it.isNotBlank() }) ?: error("Нет ID профиля")
+                            ?: child.optString("contingent_guid").takeIf { it.isNotBlank() }) ?: kotlin.error("Нет ID профиля")
                         session = StoredSession(result.optString("token", token.trim()), student, person); writeSession(session)
                     } catch (e: Exception) { error = MeshCore.describeError(e) }
                     finally { loading = false }
