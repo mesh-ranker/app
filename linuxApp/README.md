@@ -4,12 +4,12 @@ Native Linux desktop build based on Compose for Desktop. It reuses the existing 
 
 ## Build
 
-Requires JDK 17 and Linux packaging tools (`fakeroot`, `dpkg`, `libfuse2`):
+Requires JDK 17 and Linux packaging tools (`fakeroot`, `dpkg`):
 
 ```bash
-./gradlew :linuxApp:packageReleaseDeb :linuxApp:packageReleaseAppImage
+./gradlew :linuxApp:packageReleaseDeb
 ```
 
-Packages are written under `linuxApp/build/compose/binaries/main-release/`. CI publishes both formats as a GitHub prerelease from branch `linux-app`.
+The `.deb` and a self-contained app directory are written under `linuxApp/build/compose/binaries/main-release/`. CI publishes the `.deb` and a portable `.tar.gz` archive as a GitHub prerelease from branch `linux-app`.
 
-For now, sign in by pasting a MЭШ token from the browser session. The app stores its session under `~/.config/mesh-ranker/session.json` with owner-only file permissions.
+Sign in by pasting a МЭШ token from the browser session. The app stores the session under `~/.config/mesh-ranker/session.json` with owner-only file permissions. The token is not encrypted at rest.

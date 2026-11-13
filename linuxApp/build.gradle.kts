@@ -1,7 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    id("org.jetbrains.kotlin.jvm")
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.compose.multiplatform)
 }
@@ -27,8 +27,13 @@ sourceSets {
 compose.desktop {
     application {
         mainClass = "ru.meshrating.app.LinuxMainKt"
+        buildTypes.release {
+            proguard {
+                isEnabled.set(false)
+            }
+        }
         nativeDistributions {
-            targetFormats(TargetFormat.Deb, TargetFormat.AppImage)
+            targetFormats(TargetFormat.Deb)
             packageName = "mesh-ranker"
             packageVersion = providers.environmentVariable("VERSION_NAME").orElse("1.0.0").get()
             description = "MESH Ranker desktop app"

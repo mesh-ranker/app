@@ -193,13 +193,24 @@ object MeshCore {
         return runCatching {
             val payload = parts[1].replace('-', '+').replace('_', '/')
             val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
-            val bytes = android.util.Base64.decode(padded, android.util.Base64.DEFAULT)
+            val bytes = decodeBase64(padded)
             JSONObject(String(bytes, Charsets.UTF_8))
         }.getOrNull() ?: runCatching {
             val payload = parts[1].replace('-', '+').replace('_', '/')
             val padded = payload + "=".repeat((4 - payload.length % 4) % 4)
             JSONObject(String(java.util.Base64.getDecoder().decode(padded), Charsets.UTF_8))
         }.getOrNull()
+    }
+
+    /** Совместимость с JVM desktop и старыми Android, где нет java.util.Base64. */
+    private fun decodeBase64(value: String): ByteArray {
+        runCatching {
+            val type = Class.forName("android.util.Base64")
+            val defaultFlag = type.getField("DEFAULT").getInt(null)
+            type.getMethod("decode", String::class.java, Int::class.javaPrimitiveType)
+                .invoke(null, value, defaultFlag) as ByteArray
+        }.getOrNull()?.let { return it }
+        return java.util.Base64.getDecoder().decode(value)
     }
 
     /** "abcdef…yz12" — токен показываем только частично. */

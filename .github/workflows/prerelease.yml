@@ -83,13 +83,13 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build .deb and AppImage
-        run: ./gradlew --no-daemon --warning-mode all :linuxApp:packageReleaseDeb :linuxApp:packageReleaseAppImage
+      - name: Build .deb and portable archive
+        run: ./gradlew --no-daemon --warning-mode all :linuxApp:packageReleaseDeb
 
       - name: Prepare Linux artifacts
         run: |
           cp linuxApp/build/compose/binaries/main-release/deb/*.deb "mesh-ranker-${VERSION_NAME}-amd64.deb"
-          cp linuxApp/build/compose/binaries/main-release/app/*.AppImage "mesh-ranker-${VERSION_NAME}-x86_64.AppImage"
+          tar -czf "mesh-ranker-${VERSION_NAME}-linux-x64.tar.gz" -C linuxApp/build/compose/binaries/main-release/app mesh-ranker
 
       - name: Publish Linux GitHub pre-release
         uses: softprops/action-gh-release@v2
@@ -100,7 +100,7 @@ jobs:
           generate_release_notes: true
           files: |
             mesh-ranker-${{ env.VERSION_NAME }}-amd64.deb
-            mesh-ranker-${{ env.VERSION_NAME }}-x86_64.AppImage
+            mesh-ranker-${{ env.VERSION_NAME }}-linux-x64.tar.gz
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
