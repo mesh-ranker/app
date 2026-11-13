@@ -14,7 +14,7 @@ sourceSets {
     main {
         kotlin.srcDir("src/main/kotlin")
         kotlin.srcDir("../app/src/main/java/ru/meshrating/app")
-        kotlin.include("LinuxMain.kt", "MeshClient.kt", "MeshCore.kt")
+        kotlin.include("**/LinuxMain.kt", "MeshClient.kt", "MeshCore.kt")
         dependencies {
             implementation(compose.desktop.currentOs)
             implementation(compose.material3)

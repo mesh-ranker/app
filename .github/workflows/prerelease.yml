@@ -91,6 +91,10 @@ jobs:
           cp linuxApp/build/compose/binaries/main-release/deb/*.deb "mesh-ranker-${VERSION_NAME}-amd64.deb"
           mkdir -p portable
           dpkg-deb -x linuxApp/build/compose/binaries/main-release/deb/*.deb portable
+          MAIN_JAR=$(find portable/opt/mesh-ranker/lib/app -maxdepth 1 -name 'linuxApp-*.jar' -print -quit)
+          test -n "$MAIN_JAR"
+          jar tf "$MAIN_JAR" | grep -qx 'ru/meshrating/app/LinuxMainKt.class'
+          grep -qx 'app.mainclass=ru.meshrating.app.LinuxMainKt' portable/opt/mesh-ranker/lib/app/mesh-ranker.cfg
           tar -czf "mesh-ranker-${VERSION_NAME}-linux-x64.tar.gz" -C portable .
 
       - name: Publish Linux GitHub pre-release
