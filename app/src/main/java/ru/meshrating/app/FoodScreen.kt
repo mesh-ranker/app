@@ -43,6 +43,9 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
     var balances by remember { mutableStateOf(JSONArray()) }
     var menuDays by remember { mutableStateOf<JSONArray?>(null) }
     var orders by remember { mutableStateOf(JSONArray()) }
+    // Режим оплаты: false — платное (`paymentTypes` = 1), true — льготное (= 0).
+    var freeMeal by remember { mutableStateOf(false) }
+    var selectedKind by remember { mutableStateOf<Int?>(null) }
 
     fun load() {
         if (personId.isNullOrBlank()) {
@@ -104,7 +107,19 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
             }
             else -> {
                 val day = MeshCore.foodDayFor(menuDays, selectedDate)
-                val complexes = day?.optJSONArray("complexes") ?: JSONArray()
+                val all = day?.optJSONArray("complexes") ?: JSONArray()
+                val complexes = MeshCore.foodComplexesFor(all, freeMeal)
+                val kinds = MeshCore.foodMealKinds.filter { kind ->
+                    (0 until complexes.length()).any {
+                        complexes.getJSONObject(it).optInt("kind", -1) == kind
+                    }
+                }
+                val activeKind =
+                    if (selectedKind != null && kinds.contains(selectedKind)) selectedKind
+                    else kinds.firstOrNull()
+                val mealList = (0 until complexes.length())
+                    .map { complexes.getJSONObject(it) }
+                    .filter { it.optInt("kind", -1) == activeKind }
                 LazyColumn(modifier = Modifier.weight(1f)) {
                     item { BalanceCard(balances) }
                     item { StateCard(state) }
@@ -112,7 +127,36 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
                     item {
                         SectionTitle(tr("Меню на день", "Menu for the day"))
                     }
-                    if (complexes.length() == 0) {
+                    // Платное / льготное питание.
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = !freeMeal,
+                                onClick = { freeMeal = false },
+                                label = { Text(tr("Платное", "Paid")) }
+                            )
+                            FilterChip(
+                                selected = freeMeal,
+                                onClick = { freeMeal = true },
+                                label = { Text(tr("Льготное", "Free")) }
+                            )
+                        }
+                    }
+                    // Приёмы пищи, доступные в выбранном режиме.
+                    if (kinds.size > 1) {
+                        item {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                kinds.forEach { kind ->
+                                    FilterChip(
+                                        selected = kind == activeKind,
+                                        onClick = { selectedKind = kind },
+                                        label = { Text(mealLabel(kind)) }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (complexes.length() == 0 || mealList.isEmpty()) {
                         item {
                             Text(
                                 tr("Меню на этот день недоступно.", "No menu available for this day."),
@@ -122,9 +166,7 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
                             )
                         }
                     } else {
-                        items((0 until complexes.length()).map { complexes.getJSONObject(it) }) { complex ->
-                            ComplexCard(complex)
-                        }
+                        items(mealList) { complex -> ComplexCard(complex) }
                     }
 
                     if (orders.length() > 0) {
@@ -138,6 +180,17 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
             }
         }
     }
+}
+
+/** Локализованное название приёма пищи по коду `kind`. */
+@Composable
+private fun mealLabel(kind: Int): String = when (kind) {
+    0 -> tr("Завтрак", "Breakfast")
+    1 -> tr("Второй завтрак", "Second breakfast")
+    2 -> tr("Обед", "Lunch")
+    3 -> tr("Полдник", "Snack")
+    4 -> tr("Ужин", "Dinner")
+    else -> tr("Приём пищи", "Meal")
 }
 
 @Composable

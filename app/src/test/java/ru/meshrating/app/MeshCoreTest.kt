@@ -494,6 +494,9 @@ class MeshCoreTest {
         assertEquals("Экспресс 1", complex.getString("name"))
         assertEquals("Обед", complex.getString("kindLabel"))
         assertEquals("335,00 ₽", complex.getString("priceLabel"))
+        // paymentTypes = [1] → только платное.
+        assertTrue(complex.getBoolean("paid"))
+        assertFalse(complex.getBoolean("free"))
         assertEquals(1, complex.getJSONArray("dishes").length())
         assertEquals("Свекла отварная", complex.getJSONArray("dishes").getJSONObject(0).getString("name"))
 
@@ -502,6 +505,39 @@ class MeshCoreTest {
         assertNull(MeshCore.foodDayFor(days, "2026-11-14"))
         assertEquals("Завтрак", MeshCore.foodKindLabel(0))
         assertEquals("Полдник", MeshCore.foodKindLabel(3))
+    }
+
+    @Test
+    fun `еда — платное и льготное разделяются по paymentTypes`() {
+        val days = MeshCore.normalizeFoodMenu(
+            JSONArray(
+                """[{"onDate": "2026-11-19",
+                     "items": [
+                       {"id": 6738, "name": "Экспресс 1", "price": 33500, "kind": 2, "paymentTypes": [1]},
+                       {"id": 6739, "name": "Экспресс 2", "price": 30500, "kind": 2, "paymentTypes": [1]},
+                       {"id": 7034, "name": "Завтрак 5-11", "price": 19358, "kind": 0, "paymentTypes": [0, 1]},
+                       {"id": 7035, "name": "Обед 5-11", "price": 36277, "kind": 2, "paymentTypes": [0, 1]},
+                       {"id": 7079, "name": "Полдник 5-11", "price": 12092, "kind": 3, "paymentTypes": [1]}],
+                     "address": {"id": 3195}}]"""
+            )
+        )
+        val complexes = days.getJSONObject(0).getJSONArray("complexes")
+        // Порядок приёмов пищи: завтрак, обед, полдник.
+        assertEquals(listOf(0, 2, 3), MeshCore.foodMealKinds)
+
+        // Платное: все комплексы (у всех есть 1).
+        assertEquals(5, MeshCore.foodComplexesFor(complexes, free = false).length())
+        // Льготное: только комплексы с 0 — завтрак и обед.
+        val free = MeshCore.foodComplexesFor(complexes, free = true)
+        assertEquals(2, free.length())
+        assertEquals(0, free.getJSONObject(0).getInt("kind"))
+        assertEquals(2, free.getJSONObject(1).getInt("kind"))
+
+        // Полдник только платный, завтрак доступен в обоих режимах.
+        assertTrue(complexes.getJSONObject(2).getBoolean("free"))
+        assertTrue(complexes.getJSONObject(2).getBoolean("paid"))
+        assertFalse(complexes.getJSONObject(4).getBoolean("free"))
+        assertTrue(complexes.getJSONObject(4).getBoolean("paid"))
     }
 
     @Test

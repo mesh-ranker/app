@@ -1257,6 +1257,29 @@ object MeshCore {
 
     // ----------------------------------------------------------------- ЕДА ----
 
+    /**
+     * Порядок приёмов пищи, которые показывает раздел «Еда»: завтрак, обед,
+     * полдник. Остальные коды (`kind`) в меню столовой не используются.
+     */
+    val foodMealKinds: List<Int> = listOf(0, 2, 3)
+
+    /**
+     * `paymentTypes` комплекса: `1` — только платное, `0` — льготное
+     * (бесплатное) питание. Комплекс с `[0, 1]` доступен в обоих режимах.
+     */
+    fun foodPaymentKinds(types: JSONArray?): Pair<Boolean, Boolean> {
+        if (types == null || types.length() == 0) return true to false
+        var paid = false
+        var free = false
+        for (i in 0 until types.length()) {
+            when (types.optInt(i)) {
+                0 -> free = true
+                1 -> paid = true
+            }
+        }
+        return paid to free
+    }
+
     /** Приём пищи по коду `kind` из меню. */
     fun foodKindLabel(kind: Int): String = when (kind) {
         0 -> "Завтрак"
@@ -1362,6 +1385,7 @@ object MeshCore {
                     complex.optJSONArray("paymentTypes")?.let { types ->
                         for (t in 0 until types.length()) paymentTypes.put(types.optInt(t))
                     }
+                    val (paidPayment, freePayment) = foodPaymentKinds(paymentTypes)
                     complexes.put(
                         JSONObject()
                             .put("id", complex.opt("id") ?: JSONObject.NULL)
@@ -1373,6 +1397,8 @@ object MeshCore {
                             .put("preorderAllowed", complex.optBoolean("preorderAllowed", false))
                             .put("allowSelectItems", complex.optBoolean("allowSelectItems", false))
                             .put("paymentTypes", paymentTypes)
+                            .put("paid", paidPayment)
+                            .put("free", freePayment)
                             .put("dishes", dishes)
                     )
                 }
@@ -1391,6 +1417,20 @@ object MeshCore {
             )
         }
         return days
+    }
+
+    /**
+     * Комплексы выбранного режима оплаты: платные (`paymentTypes` содержит `1`)
+     * или льготные (`paymentTypes` содержит `0`). Порядок комплексов сохраняется.
+     */
+    fun foodComplexesFor(all: JSONArray, free: Boolean): JSONArray {
+        val result = JSONArray()
+        for (i in 0 until all.length()) {
+            val complex = all.optJSONObject(i) ?: continue
+            val keep = if (free) complex.optBoolean("free", false) else complex.optBoolean("paid", true)
+            if (keep) result.put(complex)
+        }
+        return result
     }
 
     /** Найти день меню по дате (или null, если меню на этот день нет). */
