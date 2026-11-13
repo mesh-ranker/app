@@ -409,7 +409,7 @@ class MeshClient(
 
     /**
      * Дополнительные заголовки для API питания: в отличие от остальных методов,
-     * `/api/food/*` ожидает токен ещё и в cookie `aupd_token` (как веб-страница).
+     * методы `/api/food/...` ожидают токен ещё и в cookie `aupd_token` (как веб-страница).
      */
     private fun foodHeaders(): Map<String, String> {
         val current = token?.takeIf { it.isNotBlank() } ?: return emptyMap()

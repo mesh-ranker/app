@@ -267,6 +267,9 @@ private fun ComplexCard(complex: JSONObject) {
     val dishes = complex.optJSONArray("dishes") ?: JSONArray()
     val kindLabel = complex.optString("kindLabel")
     val priceLabel = complex.optString("priceLabel")
+    val mealLabel = tr("Приём пищи", "Meal")
+    val gramLabel = tr("г", "g")
+    val kcalLabel = tr("ккал", "kcal")
     Card(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Column(
             modifier = Modifier
@@ -277,7 +280,7 @@ private fun ComplexCard(complex: JSONObject) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        complex.optString("name").ifBlank { tr("Приём пищи", "Meal") },
+                        complex.optString("name").ifBlank { mealLabel },
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -308,9 +311,9 @@ private fun ComplexCard(complex: JSONObject) {
                             )
                             val extras = buildList {
                                 val weight = dish.optString("weight")
-                                if (weight.isNotBlank() && weight != "0") add("$weight ${tr("г", "g")}")
+                                if (weight.isNotBlank() && weight != "0") add("$weight $gramLabel")
                                 val kcal = dish.optInt("calories", 0)
-                                if (kcal > 0) add("$kcal ${tr("ккал", "kcal")}")
+                                if (kcal > 0) add("$kcal $kcalLabel")
                             }.joinToString(" · ")
                             if (extras.isNotBlank()) {
                                 Text(

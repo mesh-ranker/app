@@ -40,8 +40,10 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
     var customColors by remember {
         mutableStateOf(prefs.getString("theme_colors", "67E8F9,071923,102A3A") ?: "67E8F9,071923,102A3A")
     }
-    var language by remember { mutableStateOf(LocalAppLanguage.current) }
+    val currentLanguage = LocalAppLanguage.current
+    var language by remember(currentLanguage) { mutableStateOf(currentLanguage) }
     val noUpdatesText = tr("Обновлений нет", "No updates")
+    val myThemeLabel = tr("Моя тема", "My theme")
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp)
@@ -68,7 +70,7 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
                     ) {
                         RadioButton(selected = theme == id, onClick = null)
                         Spacer(Modifier.width(6.dp))
-                        Text(AppTheme.label(id, customName.ifBlank { tr("Моя тема", "My theme") }))
+                        Text(AppTheme.label(id, customName.ifBlank { myThemeLabel }))
                     }
                 }
                 Spacer(Modifier.height(6.dp))
