@@ -48,7 +48,12 @@ class MeshClient(
         MeshCore.baseHeaders() + MeshCore.authHeaders(token, profileId) + extra
 
     /** Базовый GET с обработкой кода ответа и ошибок сети. */
-    fun request(path: String, params: Map<String, Any?> = emptyMap(), retryOn401: Boolean = true): JSONObject? {
+    fun request(
+        path: String,
+        params: Map<String, Any?> = emptyMap(),
+        retryOn401: Boolean = true,
+        extraHeaders: () -> Map<String, String> = { emptyMap() }
+    ): JSONObject? {
         val url = buildUrl(path, params)
         var attempt = 0
         val maxAttempts = if (autoRefresh && retryOn401) 2 else 1
@@ -61,7 +66,7 @@ class MeshClient(
                     connectTimeout = timeoutMs
                     readTimeout = timeoutMs
                     instanceFollowRedirects = true
-                    headers().forEach { (key, value) -> setRequestProperty(key, value) }
+                    headers(extraHeaders()).forEach { (key, value) -> setRequestProperty(key, value) }
                 }
             } catch (error: Exception) {
                 throw MeshCore.MeshError("Не удалось создать запрос: ${error.message}", "network", 0, error)
@@ -399,6 +404,82 @@ class MeshClient(
 
     fun getSchedule(studentId: String?, date: String = MeshCore.today()): JSONArray =
         MeshCore.normalizeSchedule(request(MeshCore.Paths.SCHEDULE, mapOf("student_id" to studentId, "date" to date)), date)
+
+    // ------------------------------------------------------------------ ЕДА ----
+
+    /**
+     * Дополнительные заголовки для API питания: в отличие от остальных методов,
+     * `/api/food/*` ожидает токен ещё и в cookie `aupd_token` (как веб-страница).
+     */
+    private fun foodHeaders(): Map<String, String> {
+        val current = token?.takeIf { it.isNotBlank() } ?: return emptyMap()
+        return mapOf("Cookie" to "aupd_token=$current")
+    }
+
+    /** `clientId` в API питания — это JSON-объект `{"personId":"<guid>"}`. */
+    private fun clientIdParam(personId: String): String =
+        JSONObject().put("personId", personId).toString()
+
+    private fun requirePersonId(personId: String?): String {
+        val id = personId?.trim().orEmpty()
+        if (id.isBlank()) throw MeshCore.MeshError("Не указан ученик для раздела питания", "bad-food")
+        return id
+    }
+
+    /** Состояние питания: доступность предзаказа, адрес столовой, неделя питания. */
+    fun getFoodState(personId: String?): JSONObject {
+        val id = requirePersonId(personId)
+        val json = request(
+            MeshCore.Paths.FOOD_STATE,
+            mapOf("clientId" to clientIdParam(id)),
+            extraHeaders = { foodHeaders() }
+        )
+        return MeshCore.normalizeFoodState(json)
+    }
+
+    /** Баланс лицевого счёта (рубли-копейки) по ученику. */
+    fun getFoodBalance(personId: String?): JSONArray {
+        val id = requirePersonId(personId)
+        val clientIds = JSONArray().put(JSONObject().put("personId", id)).toString()
+        val json = request(
+            MeshCore.Paths.FOOD_BALANCE,
+            mapOf("clientIds" to clientIds),
+            extraHeaders = { foodHeaders() }
+        )
+        return MeshCore.normalizeFoodBalance(MeshCore.payloadList(json))
+    }
+
+    /** Меню комплексных обедов на диапазон дат (обычно один день). */
+    fun getFoodMenu(personId: String?, from: String, to: String): JSONArray {
+        val id = requirePersonId(personId)
+        val json = request(
+            MeshCore.Paths.FOOD_MENU,
+            mapOf(
+                "clientId" to clientIdParam(id),
+                "from" to from,
+                "to" to to,
+                "withPreorder" to "in"
+            ),
+            extraHeaders = { foodHeaders() }
+        )
+        return MeshCore.normalizeFoodMenu(MeshCore.payloadList(json))
+    }
+
+    /** Заказы (предзаказы) питания на диапазон дат. */
+    fun getFoodOrders(personId: String?, from: String, to: String): JSONArray {
+        val id = requirePersonId(personId)
+        val json = request(
+            MeshCore.Paths.FOOD_ORDERS,
+            mapOf(
+                "clientId" to clientIdParam(id),
+                "from" to from,
+                "to" to to,
+                "limit" to 50
+            ),
+            extraHeaders = { foodHeaders() }
+        )
+        return json?.optJSONArray("orders") ?: JSONArray()
+    }
 
     /** Имя ученика по personId (с кэшем — на класс обычно один запрос на человека). */
     fun getName(personId: String?): String {

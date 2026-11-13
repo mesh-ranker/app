@@ -43,6 +43,12 @@ object MeshCore {
         const val SCHEDULE = "/api/family/web/v1/schedule"
         const val TOKEN_REFRESH = "/v2/token/refresh"
         const val USER_INFO = "/v3/userinfo"
+
+        /** Питание (ЕДА): состояние, баланс, заказы и меню комплексных обедов. */
+        const val FOOD_STATE = "/api/food/meals/v3/clients/allowed-food-state"
+        const val FOOD_BALANCE = "/api/food/meals/v3/clients/balance"
+        const val FOOD_ORDERS = "/api/food/meals/v3/orders"
+        const val FOOD_MENU = "/api/food/meals/v3/menu/complexes"
     }
 
     /** Страница, после входа на которую МЭШ выдаёт свежий токен. */
@@ -1238,4 +1244,152 @@ object MeshCore {
     }
 
     fun dateRangeText(from: String, to: String): String = "${dateShort(from)} — ${dateShort(to)}"
+
+    // ----------------------------------------------------------------- ЕДА ----
+
+    /** Приём пищи по коду `kind` из меню. */
+    fun foodKindLabel(kind: Int): String = when (kind) {
+        0 -> "Завтрак"
+        1 -> "Второй завтрак"
+        2 -> "Обед"
+        3 -> "Полдник"
+        4 -> "Ужин"
+        else -> "Приём пищи"
+    }
+
+    /** Копейки → «193,58 ₽». */
+    fun formatMoney(kopecks: Long): String {
+        val sign = if (kopecks < 0) "-" else ""
+        val abs = kotlin.math.abs(kopecks)
+        return String.format(Locale.US, "%s%d,%02d ₽", sign, abs / 100, abs % 100)
+    }
+
+    /** Разбор `allowed-food-state`: флаги, адреса столовой и неделя питания. */
+    fun normalizeFoodState(json: JSONObject?): JSONObject {
+        val src = json ?: JSONObject()
+        val addresses = JSONArray()
+        src.optJSONArray("addresses")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val item = arr.optJSONObject(i) ?: continue
+                val address = item.optJSONObject("address") ?: JSONObject()
+                val settings = item.optJSONObject("settings") ?: JSONObject()
+                addresses.put(
+                    JSONObject()
+                        .put("id", address.opt("id") ?: JSONObject.NULL)
+                        .put("organizationName", address.optString("organizationName"))
+                        .put("text", address.optString("text"))
+                        .put("foodboxAvailable", settings.optBoolean("foodboxAvailable", false))
+                        .put("preorderAvailable", settings.optBoolean("preorderAvailable", false))
+                )
+            }
+        }
+        return JSONObject()
+            .put("discountedMeals", src.optBoolean("discountedMeals", false))
+            .put("preorderAllowed", src.optBoolean("preorderAllowed", false))
+            .put("foodboxAllowed", src.optBoolean("foodboxAllowed", false))
+            .put("specialDietComplex", src.optBoolean("specialDietComplex", false))
+            .put("addresses", addresses)
+            .put("feedingWeek", src.optJSONObject("feedingWeek") ?: JSONObject())
+    }
+
+    /** Разбор баланса: `[{contractId, balance, ...}]` → нормализованный список. */
+    fun normalizeFoodBalance(items: JSONArray): JSONArray {
+        val result = JSONArray()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val constraints = item.optJSONObject("expenseConstraints") ?: JSONObject()
+            result.put(
+                JSONObject()
+                    .put("contractId", item.opt("contractId") ?: JSONObject.NULL)
+                    .put("balance", item.optLong("balance", 0L))
+                    .put(
+                        "expenseDayLimit",
+                        constraints.opt("expenseDayLimit") ?: item.opt("expenseDayLimit") ?: JSONObject.NULL
+                    )
+                    .put(
+                        "balanceThreshold",
+                        constraints.opt("balanceThreshold") ?: item.opt("balanceThreshold") ?: JSONObject.NULL
+                    )
+            )
+        }
+        return result
+    }
+
+    /**
+     * Разбор меню комплексных обедов: `[{onDate, items:[...], address}]` →
+     * `[{date, address, complexes:[{... dishes:[...]}]}]`.
+     */
+    fun normalizeFoodMenu(items: JSONArray): JSONArray {
+        val days = JSONArray()
+        for (i in 0 until items.length()) {
+            val day = items.optJSONObject(i) ?: continue
+            val complexes = JSONArray()
+            day.optJSONArray("items")?.let { list ->
+                for (j in 0 until list.length()) {
+                    val complex = list.optJSONObject(j) ?: continue
+                    val dishes = JSONArray()
+                    complex.optJSONArray("complexItems")?.let { dishList ->
+                        for (k in 0 until dishList.length()) {
+                            val dish = dishList.optJSONObject(k)?.optJSONObject("dish") ?: continue
+                            dishes.put(
+                                JSONObject()
+                                    .put("id", dish.opt("id") ?: JSONObject.NULL)
+                                    .put("name", dish.optString("name"))
+                                    .put("weight", dish.optString("weight"))
+                                    .put("calories", dish.optInt("calories", 0))
+                                    .put("protein", dish.optDouble("protein", 0.0))
+                                    .put("fat", dish.optDouble("fat", 0.0))
+                                    .put("carbohydrates", dish.optDouble("carbohydrates", 0.0))
+                                    .put("categoryName", dish.optString("categoryName"))
+                                    .put("subcategoryName", dish.optString("subcategoryName"))
+                                    .put("ingredients", dish.optString("ingredients"))
+                            )
+                        }
+                    }
+                    val kind = complex.optInt("kind", -1)
+                    val price = complex.optLong("price", 0L)
+                    val paymentTypes = JSONArray()
+                    complex.optJSONArray("paymentTypes")?.let { types ->
+                        for (t in 0 until types.length()) paymentTypes.put(types.optInt(t))
+                    }
+                    complexes.put(
+                        JSONObject()
+                            .put("id", complex.opt("id") ?: JSONObject.NULL)
+                            .put("name", complex.optString("name"))
+                            .put("kind", kind)
+                            .put("kindLabel", foodKindLabel(kind))
+                            .put("price", price)
+                            .put("priceLabel", formatMoney(price))
+                            .put("preorderAllowed", complex.optBoolean("preorderAllowed", false))
+                            .put("allowSelectItems", complex.optBoolean("allowSelectItems", false))
+                            .put("paymentTypes", paymentTypes)
+                            .put("dishes", dishes)
+                    )
+                }
+            }
+            val address = day.optJSONObject("address") ?: JSONObject()
+            days.put(
+                JSONObject()
+                    .put("date", day.optString("onDate"))
+                    .put(
+                        "address",
+                        JSONObject()
+                            .put("organizationName", address.optString("organizationName"))
+                            .put("text", address.optString("text"))
+                    )
+                    .put("complexes", complexes)
+            )
+        }
+        return days
+    }
+
+    /** Найти день меню по дате (или null, если меню на этот день нет). */
+    fun foodDayFor(days: JSONArray?, date: String): JSONObject? {
+        if (days == null) return null
+        for (i in 0 until days.length()) {
+            val day = days.optJSONObject(i) ?: continue
+            if (day.optString("date") == date) return day
+        }
+        return null
+    }
 }

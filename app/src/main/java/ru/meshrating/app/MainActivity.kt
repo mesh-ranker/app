@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -43,15 +42,31 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MeshRankerTheme(content: @Composable () -> Unit) {
-    val darkColors = darkColorScheme(
-        primary = Color(0xFFD1D5DB),
-        background = Color(0xFF10131A),
-        surface = Color(0xFF1B2130),
-        onPrimary = Color(0xFF111111),
-        onBackground = Color(0xFFE8EDF7),
-        onSurface = Color(0xFFE8EDF7)
-    )
-    MaterialTheme(colorScheme = darkColors, content = content)
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("mesh_settings", android.content.Context.MODE_PRIVATE) }
+    var themeId by remember { mutableStateOf(prefs.getString("theme_id", AppTheme.DEFAULT_ID) ?: AppTheme.DEFAULT_ID) }
+    var themeColors by remember { mutableStateOf(prefs.getString("theme_colors", null)) }
+    var language by remember { mutableStateOf(prefs.getString("language", "ru") ?: "ru") }
+    val colors = remember(themeId, themeColors) { AppTheme.colors(themeId, themeColors) }
+
+    val applyTheme: (String) -> Unit = { id ->
+        themeId = id
+        prefs.edit().putString("theme_id", id).apply()
+        // Перечитываем пользовательские цвета: их могли изменить в настройках.
+        themeColors = prefs.getString("theme_colors", null)
+    }
+    val applyLanguage: (String) -> Unit = { code ->
+        language = code
+        prefs.edit().putString("language", code).apply()
+    }
+
+    CompositionLocalProvider(
+        LocalAppTheme provides applyTheme,
+        LocalAppLanguage provides language,
+        LocalAppLanguageSetter provides applyLanguage
+    ) {
+        MaterialTheme(colorScheme = colors, content = content)
+    }
 }
 
 @Composable
@@ -344,12 +359,13 @@ fun MainScaffold(
     }
 
     val screenTitle = when (currentTab) {
-        "ranking" -> "Рейтинг"
-        "marks" -> if (marksSubjectName.isNullOrBlank()) "Оценки" else "Оценки · $marksSubjectName"
-        "homeworks" -> "Домашние задания"
-        "schedule" -> "Расписание"
-        "settings" -> "Настройки"
-        else -> "МЭШ Рейтинг"
+        "ranking" -> tr("Рейтинг", "Ranking")
+        "marks" -> if (marksSubjectName.isNullOrBlank()) tr("Оценки", "Marks") else "${tr("Оценки", "Marks")} · $marksSubjectName"
+        "homeworks" -> tr("Домашние задания", "Homework")
+        "schedule" -> tr("Расписание", "Schedule")
+        "food" -> tr("Еда и баланс", "Food & balance")
+        "settings" -> tr("Настройки", "Settings")
+        else -> tr("МЭШ Рейтинг", "MESH Ranking")
     }
 
     Scaffold(
@@ -380,10 +396,10 @@ fun MainScaffold(
         bottomBar = {
             NavigationBar {
                 val items = listOf(
-                    Triple("ranking", "Рейтинг", R.drawable.ic_nav_ranking),
-                    Triple("marks", "Оценки", R.drawable.ic_nav_marks),
-                    Triple("homeworks", "ДЗ", R.drawable.ic_nav_homeworks),
-                    Triple("schedule", "Расписание", R.drawable.ic_nav_schedule)
+                    Triple("ranking", tr("Рейтинг", "Rating"), R.drawable.ic_nav_ranking),
+                    Triple("marks", tr("Оценки", "Marks"), R.drawable.ic_nav_marks),
+                    Triple("homeworks", tr("ДЗ", "Homework"), R.drawable.ic_nav_homeworks),
+                    Triple("schedule", tr("Расписание", "Schedule"), R.drawable.ic_nav_schedule)
                 )
                 items.forEach { (key, label, iconRes) ->
                     NavigationBarItem(
@@ -440,8 +456,10 @@ fun MainScaffold(
                     store,
                     client,
                     studentId,
-                    onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) }
+                    onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) },
+                    onFoodClick = { navigateTo(NavState(tab = "food")) }
                 )
+                "food" -> FoodScreen(store, client, personId)
                 "settings" -> SettingsScreen(store, client, profile, onLogout)
             }
         }

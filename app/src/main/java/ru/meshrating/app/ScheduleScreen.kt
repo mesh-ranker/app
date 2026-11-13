@@ -21,7 +21,8 @@ fun ScheduleScreen(
     store: SessionStore,
     client: MeshClient,
     studentId: String?,
-    onHomeworkClick: (HomeworkTarget) -> Unit = {}
+    onHomeworkClick: (HomeworkTarget) -> Unit = {},
+    onFoodClick: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(studentId != null) }
@@ -56,6 +57,9 @@ fun ScheduleScreen(
             onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
             onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
         )
+        OutlinedButton(onClick = onFoodClick, modifier = Modifier.fillMaxWidth()) {
+            Text(tr("Еда и баланс", "Food & balance"))
+        }
         Spacer(Modifier.height(4.dp))
 
         when {

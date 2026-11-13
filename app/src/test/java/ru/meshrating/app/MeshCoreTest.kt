@@ -438,4 +438,77 @@ class MeshCoreTest {
         assertEquals(5.0, period.getDouble("value"), 0.001)
         assertEquals(4.0, marks.getJSONObject(1).getDouble("yearMark"), 0.001)
     }
+
+    @Test
+    fun `деньги форматируются из копеек`() {
+        assertEquals("0,00 ₽", MeshCore.formatMoney(0))
+        assertEquals("335,00 ₽", MeshCore.formatMoney(33500))
+        assertEquals("193,58 ₽", MeshCore.formatMoney(19358))
+        assertEquals("-12,05 ₽", MeshCore.formatMoney(-1205))
+    }
+
+    @Test
+    fun `еда: состояние, баланс и меню разбираются`() {
+        val state = MeshCore.normalizeFoodState(
+            JSONObject(
+                """{"discountedMeals": false, "preorderAllowed": false, "foodboxAllowed": true,
+                    "specialDietComplex": false,
+                    "addresses": [{"address": {"id": 3195, "organizationName": "Школа №1580", "text": "ул. Стасовой, 8"},
+                                   "settings": {"foodboxAvailable": false, "preorderAvailable": true}}],
+                    "feedingWeek": {"monday": true, "tuesday": true, "saturday": false, "sunday": false}}"""
+            )
+        )
+        assertFalse(state.getBoolean("preorderAllowed"))
+        assertTrue(state.getBoolean("foodboxAllowed"))
+        val address = state.getJSONArray("addresses").getJSONObject(0)
+        assertEquals("Школа №1580", address.getString("organizationName"))
+        assertTrue(address.getBoolean("preorderAvailable"))
+        assertTrue(state.getJSONObject("feedingWeek").getBoolean("monday"))
+
+        val balance = MeshCore.normalizeFoodBalance(
+            JSONArray(
+                """[{"clientId": {"personId": "abc", "staffId": null}, "contractId": 270455207,
+                     "balance": 12345, "expenseConstraints": {"expenseDayLimit": 5000, "balanceThreshold": null}}]"""
+            )
+        )
+        assertEquals(1, balance.length())
+        assertEquals(12345L, balance.getJSONObject(0).getLong("balance"))
+        assertEquals(5000L, balance.getJSONObject(0).getLong("expenseDayLimit"))
+        assertEquals("123,45 ₽", MeshCore.formatMoney(balance.getJSONObject(0).getLong("balance")))
+
+        val days = MeshCore.normalizeFoodMenu(
+            JSONArray(
+                """[{"onDate": "2026-11-13",
+                     "items": [{"id": 6738, "name": "Экспресс 1", "price": 33500, "kind": 2,
+                                "paymentTypes": [1], "preorderAllowed": true,
+                                "complexItems": [{"dish": {"id": 11, "name": "Свекла отварная", "weight": "30",
+                                                            "calories": 13, "protein": 0, "fat": 0,
+                                                            "carbohydrates": 2, "categoryName": "Холодные блюда"}}]}],
+                     "address": {"id": 3195, "organizationName": "Школа №1580", "text": "ул. Стасовой, 8"}}]"""
+            )
+        )
+        assertEquals(1, days.length())
+        val day = days.getJSONObject(0)
+        assertEquals("2026-11-13", day.getString("date"))
+        val complex = day.getJSONArray("complexes").getJSONObject(0)
+        assertEquals("Экспресс 1", complex.getString("name"))
+        assertEquals("Обед", complex.getString("kindLabel"))
+        assertEquals("335,00 ₽", complex.getString("priceLabel"))
+        assertEquals(1, complex.getJSONArray("dishes").length())
+        assertEquals("Свекла отварная", complex.getJSONArray("dishes").getJSONObject(0).getString("name"))
+
+        // Поиск дня по дате и подписи приёмов пищи.
+        assertNotNull(MeshCore.foodDayFor(days, "2026-11-13"))
+        assertNull(MeshCore.foodDayFor(days, "2026-11-14"))
+        assertEquals("Завтрак", MeshCore.foodKindLabel(0))
+        assertEquals("Полдник", MeshCore.foodKindLabel(3))
+    }
+
+    @Test
+    fun `еда: пути API`() {
+        assertEquals("/api/food/meals/v3/clients/allowed-food-state", MeshCore.Paths.FOOD_STATE)
+        assertEquals("/api/food/meals/v3/clients/balance", MeshCore.Paths.FOOD_BALANCE)
+        assertEquals("/api/food/meals/v3/orders", MeshCore.Paths.FOOD_ORDERS)
+        assertEquals("/api/food/meals/v3/menu/complexes", MeshCore.Paths.FOOD_MENU)
+    }
 }
