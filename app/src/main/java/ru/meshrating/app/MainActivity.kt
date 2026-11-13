@@ -52,7 +52,7 @@ fun MeshRankerTheme(content: @Composable () -> Unit) {
     }
 }
 
-private val LocalAppTheme = staticCompositionLocalOf<(String) -> Unit>({})
+private val LocalAppTheme = staticCompositionLocalOf<(String) -> Unit> { {} }
 
 private object AppTheme {
     val ids = listOf("midnight", "ocean", "forest", "sunset", "light", "custom")
@@ -320,6 +320,7 @@ fun MainScaffold(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    val applyTheme = LocalAppTheme.current
     var currentTab by remember { mutableStateOf("ranking") }
     var rankingSubjectId by remember { mutableStateOf<String?>(null) }
     var marksSubjectId by remember { mutableStateOf<String?>(null) }
@@ -465,7 +466,7 @@ fun MainScaffold(
                     onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) },
                     onFoodClick = { context -> context.startActivity(Intent(context, FoodActivity::class.java)) }
                 )
-                "settings" -> SettingsScreen(store, client, profile, onLogout, onThemeChange = { LocalAppTheme.current(it) })
+                "settings" -> SettingsScreen(store, client, profile, onLogout, onThemeChange = applyTheme)
             }
         }
     }

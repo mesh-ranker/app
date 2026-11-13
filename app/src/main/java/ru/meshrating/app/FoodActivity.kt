@@ -16,7 +16,7 @@ class FoodActivity : AppCompatActivity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
-            userAgentString = MeshCore.USER_AGENT
+            settings.userAgentString = MeshCore.USER_AGENT
             webViewClient = WebViewClient()
             loadUrl("https://school.mos.ru/diary/school/food?food_tab=main")
         }
