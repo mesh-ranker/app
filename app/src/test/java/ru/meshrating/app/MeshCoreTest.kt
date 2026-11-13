@@ -448,7 +448,7 @@ class MeshCoreTest {
     }
 
     @Test
-    fun `еда: состояние, баланс и меню разбираются`() {
+    fun `еда — состояние, баланс и меню разбираются`() {
         val state = MeshCore.normalizeFoodState(
             JSONObject(
                 """{"discountedMeals": false, "preorderAllowed": false, "foodboxAllowed": true,
@@ -505,7 +505,7 @@ class MeshCoreTest {
     }
 
     @Test
-    fun `еда: пути API`() {
+    fun `еда — пути API`() {
         assertEquals("/api/food/meals/v3/clients/allowed-food-state", MeshCore.Paths.FOOD_STATE)
         assertEquals("/api/food/meals/v3/clients/balance", MeshCore.Paths.FOOD_BALANCE)
         assertEquals("/api/food/meals/v3/orders", MeshCore.Paths.FOOD_ORDERS)
