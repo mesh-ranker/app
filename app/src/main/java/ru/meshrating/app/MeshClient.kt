@@ -44,15 +44,19 @@ class MeshClient(
         return baseUrl.trimEnd('/') + path + if (query.isEmpty()) "" else "?$query"
     }
 
-    private fun headers(extra: Map<String, String> = emptyMap()): Map<String, String> =
-        MeshCore.baseHeaders() + MeshCore.authHeaders(token, profileId) + extra
+    private fun headers(
+        extra: Map<String, String> = emptyMap(),
+        includeAuthToken: Boolean = true
+    ): Map<String, String> =
+        MeshCore.baseHeaders() + MeshCore.authHeaders(token, profileId, includeAuthToken) + extra
 
     /** Базовый GET с обработкой кода ответа и ошибок сети. */
     fun request(
         path: String,
         params: Map<String, Any?> = emptyMap(),
         retryOn401: Boolean = true,
-        extraHeaders: () -> Map<String, String> = { emptyMap() }
+        extraHeaders: () -> Map<String, String> = { emptyMap() },
+        includeAuthToken: Boolean = true
     ): JSONObject? {
         val url = buildUrl(path, params)
         var attempt = 0
@@ -66,7 +70,7 @@ class MeshClient(
                     connectTimeout = timeoutMs
                     readTimeout = timeoutMs
                     instanceFollowRedirects = true
-                    headers(extraHeaders()).forEach { (key, value) -> setRequestProperty(key, value) }
+                    headers(extraHeaders(), includeAuthToken).forEach { (key, value) -> setRequestProperty(key, value) }
                 }
             } catch (error: Exception) {
                 throw MeshCore.MeshError("Не удалось создать запрос: ${error.message}", "network", 0, error)
@@ -432,7 +436,8 @@ class MeshClient(
         val json = request(
             MeshCore.Paths.FOOD_STATE,
             mapOf("clientId" to clientIdParam(id)),
-            extraHeaders = { foodHeaders() }
+            extraHeaders = { foodHeaders() },
+            includeAuthToken = false
         )
         return MeshCore.normalizeFoodState(json)
     }
@@ -444,7 +449,8 @@ class MeshClient(
         val json = request(
             MeshCore.Paths.FOOD_BALANCE,
             mapOf("clientIds" to clientIds),
-            extraHeaders = { foodHeaders() }
+            extraHeaders = { foodHeaders() },
+            includeAuthToken = false
         )
         return MeshCore.normalizeFoodBalance(MeshCore.payloadList(json))
     }
@@ -460,7 +466,8 @@ class MeshClient(
                 "to" to to,
                 "withPreorder" to "in"
             ),
-            extraHeaders = { foodHeaders() }
+            extraHeaders = { foodHeaders() },
+            includeAuthToken = false
         )
         return MeshCore.normalizeFoodMenu(MeshCore.payloadList(json))
     }
@@ -476,7 +483,8 @@ class MeshClient(
                 "to" to to,
                 "limit" to 50
             ),
-            extraHeaders = { foodHeaders() }
+            extraHeaders = { foodHeaders() },
+            includeAuthToken = false
         )
         return json?.optJSONArray("orders") ?: JSONArray()
     }

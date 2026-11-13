@@ -89,12 +89,22 @@ object MeshCore {
         "X-Mes-Subsystem" to SUBSYSTEM
     )
 
-    /** МЭШ понимает оба заголовка: и Authorization, и Auth-Token. */
-    fun authHeaders(token: String?, profileId: String?): Map<String, String> {
+    /**
+     * МЭШ понимает оба заголовка: и Authorization, и Auth-Token.
+     *
+     * [includeAuthToken] = false нужен для API питания (`/api/food/...`):
+     * его шлюз отвечает 401, если в запросе есть `Auth-Token`, и принимает
+     * только `Authorization: Bearer`.
+     */
+    fun authHeaders(
+        token: String?,
+        profileId: String?,
+        includeAuthToken: Boolean = true
+    ): Map<String, String> {
         val headers = mutableMapOf<String, String>()
         if (!token.isNullOrBlank()) {
             headers["Authorization"] = "Bearer $token"
-            headers["Auth-Token"] = token
+            if (includeAuthToken) headers["Auth-Token"] = token
         }
         if (!profileId.isNullOrBlank()) headers["Profile-Id"] = profileId
         return headers
