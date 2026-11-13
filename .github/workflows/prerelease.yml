@@ -89,7 +89,9 @@ jobs:
       - name: Prepare Linux artifacts
         run: |
           cp linuxApp/build/compose/binaries/main-release/deb/*.deb "mesh-ranker-${VERSION_NAME}-amd64.deb"
-          tar -czf "mesh-ranker-${VERSION_NAME}-linux-x64.tar.gz" -C linuxApp/build/compose/binaries/main-release/app mesh-ranker
+          mkdir -p portable
+          dpkg-deb -x linuxApp/build/compose/binaries/main-release/deb/*.deb portable
+          tar -czf "mesh-ranker-${VERSION_NAME}-linux-x64.tar.gz" -C portable .
 
       - name: Publish Linux GitHub pre-release
         uses: softprops/action-gh-release@v2
