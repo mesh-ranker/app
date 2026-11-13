@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,8 +22,10 @@ fun ScheduleScreen(
     store: SessionStore,
     client: MeshClient,
     studentId: String?,
-    onHomeworkClick: (HomeworkTarget) -> Unit = {}
+    onHomeworkClick: (HomeworkTarget) -> Unit = {},
+    onFoodClick: (android.content.Context) -> Unit = {}
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(studentId != null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -56,6 +59,9 @@ fun ScheduleScreen(
             onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
             onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
         )
+        OutlinedButton(onClick = { onFoodClick(context) }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (store.settings(mapOf("language" to "ru"))["language"] == "en") "Food & balance" else "Еда и баланс")
+        }
         Spacer(Modifier.height(4.dp))
 
         when {

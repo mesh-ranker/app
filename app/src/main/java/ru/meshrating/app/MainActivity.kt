@@ -43,15 +43,36 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MeshRankerTheme(content: @Composable () -> Unit) {
-    val darkColors = darkColorScheme(
-        primary = Color(0xFFD1D5DB),
-        background = Color(0xFF10131A),
-        surface = Color(0xFF1B2130),
-        onPrimary = Color(0xFF111111),
-        onBackground = Color(0xFFE8EDF7),
-        onSurface = Color(0xFFE8EDF7)
-    )
-    MaterialTheme(colorScheme = darkColors, content = content)
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("mesh_settings", android.content.Context.MODE_PRIVATE) }
+    var themeId by remember { mutableStateOf(prefs.getString("theme_id", "midnight") ?: "midnight") }
+    val colors = remember(themeId) { AppTheme.colors(themeId, prefs.getString("theme_colors", null)) }
+    CompositionLocalProvider(LocalAppTheme provides { themeId = it; prefs.edit().putString("theme_id", it).apply() }) {
+        MaterialTheme(colorScheme = colors, content = content)
+    }
+}
+
+private val LocalAppTheme = staticCompositionLocalOf<(String) -> Unit>({})
+
+private object AppTheme {
+    val ids = listOf("midnight", "ocean", "forest", "sunset", "light", "custom")
+    fun colors(id: String, custom: String?): ColorScheme {
+        val palettes = mapOf(
+            "midnight" to Triple(0xFFD1D5DB, 0xFF10131A, 0xFF1B2130),
+            "ocean" to Triple(0xFF67E8F9, 0xFF071923, 0xFF102A3A),
+            "forest" to Triple(0xFF86EFAC, 0xFF0D1B16, 0xFF183126),
+            "sunset" to Triple(0xFFFDA4AF, 0xFF211318, 0xFF352027),
+            "light" to Triple(0xFF2563EB, 0xFFF5F7FB, 0xFFFFFFFF)
+        )
+        val p = if (id == "custom" && !custom.isNullOrBlank()) runCatching {
+            val parts = custom.split(",").map { it.toLong(16) }
+            Triple(parts[0], parts[1], parts[2])
+        }.getOrNull() ?: palettes.getValue("midnight") else palettes[id] ?: palettes.getValue("midnight")
+        val primary = Color(p.first); val background = Color(p.second); val surface = Color(p.third)
+        val light = id == "light"
+        return if (light) lightColorScheme(primary = primary, background = background, surface = surface)
+        else darkColorScheme(primary = primary, background = background, surface = surface, onPrimary = Color(0xFF111111), onBackground = Color(0xFFE8EDF7), onSurface = Color(0xFFE8EDF7))
+    }
 }
 
 @Composable
@@ -298,6 +319,7 @@ fun MainScaffold(
     studentId: String?,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
     var currentTab by remember { mutableStateOf("ranking") }
     var rankingSubjectId by remember { mutableStateOf<String?>(null) }
     var marksSubjectId by remember { mutableStateOf<String?>(null) }
@@ -347,8 +369,8 @@ fun MainScaffold(
         "ranking" -> "Рейтинг"
         "marks" -> if (marksSubjectName.isNullOrBlank()) "Оценки" else "Оценки · $marksSubjectName"
         "homeworks" -> "Домашние задания"
-        "schedule" -> "Расписание"
-        "settings" -> "Настройки"
+        "schedule" -> if (store.settings(mapOf("language" to "ru"))["language"] == "en") "Schedule" else "Расписание"
+        "settings" -> if (store.settings(mapOf("language" to "ru"))["language"] == "en") "Settings" else "Настройки"
         else -> "МЭШ Рейтинг"
     }
 
@@ -440,9 +462,10 @@ fun MainScaffold(
                     store,
                     client,
                     studentId,
-                    onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) }
+                    onHomeworkClick = { navigateTo(NavState(tab = "homeworks", target = it)) },
+                    onFoodClick = { context -> context.startActivity(Intent(context, FoodActivity::class.java)) }
                 )
-                "settings" -> SettingsScreen(store, client, profile, onLogout)
+                "settings" -> SettingsScreen(store, client, profile, onLogout, onThemeChange = { LocalAppTheme.current(it) })
             }
         }
     }

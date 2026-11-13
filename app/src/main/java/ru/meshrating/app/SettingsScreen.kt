@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 @Composable
-fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?, onLogout: () -> Unit) {
+fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?, onLogout: () -> Unit, onThemeChange: (String) -> Unit = {}) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var refreshing by remember { mutableStateOf(false) }
@@ -26,6 +26,12 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
     var checkingUpdates by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     var updateMessage by remember { mutableStateOf<String?>(null) }
+    val prefs = remember(context) { context.getSharedPreferences("mesh_settings", android.content.Context.MODE_PRIVATE) }
+    var language by remember { mutableStateOf(prefs.getString("language", "ru") ?: "ru") }
+    var theme by remember { mutableStateOf(prefs.getString("theme_id", "midnight") ?: "midnight") }
+    var customName by remember { mutableStateOf(prefs.getString("custom_theme_name", "Моя тема") ?: "Моя тема") }
+    var customColors by remember { mutableStateOf(prefs.getString("theme_colors", "67E8F9,071923,102A3A") ?: "67E8F9,071923,102A3A") }
+    val english = language == "en"
     val tokenInfo = MeshCore.describeToken(store.token)
 
     Column(
@@ -36,7 +42,38 @@ fun SettingsScreen(store: SessionStore, client: MeshClient, profile: JSONObject?
 
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(12.dp)) {
-                Text("Приложение", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(if (english) "Appearance" else "Оформление", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                listOf("midnight" to "Полночь", "ocean" to "Океан", "forest" to "Лес", "sunset" to "Закат", "light" to "Светлая", "custom" to customName).forEach { (id, label) ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        RadioButton(selected = theme == id, onClick = { theme = id; prefs.edit().putString("theme_id", id).apply(); onThemeChange(id) })
+                        Text(label)
+                    }
+                }
+                OutlinedTextField(value = customName, onValueChange = { customName = it; prefs.edit().putString("custom_theme_name", it).apply() }, label = { Text(if (english) "Custom theme name" else "Название своей темы") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(value = customColors, onValueChange = { customColors = it; prefs.edit().putString("theme_colors", it).apply() }, label = { Text(if (english) "Primary, background, surface (hex)" else "Акцент, фон, поверхность (HEX через запятую)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Text(if (english) "Example: 67E8F9,071923,102A3A" else "Пример: 67E8F9,071923,102A3A", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { theme = "custom"; prefs.edit().putString("theme_id", "custom").apply(); onThemeChange("custom") }, modifier = Modifier.fillMaxWidth()) { Text(if (english) "Save and apply custom theme" else "Сохранить и применить свою тему") }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(if (english) "Language" else "Язык", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                listOf("ru" to "Русский", "en" to "English").forEach { (code, label) ->
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        RadioButton(selected = language == code, onClick = { language = code; prefs.edit().putString("language", code).apply() })
+                        Text(label)
+                    }
+                }
+                Text(if (english) "Navigation and settings labels update immediately." else "Подписи навигации и настроек переключаются сразу.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(if (english) "Application" else "Приложение", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.height(6.dp))
                 SettingsRow("Сервер", MeshCore.HOST.removePrefix("https://"))
                 SettingsRow("Хранилище", if (store.isEncrypted()) "зашифровано" else "приватное")

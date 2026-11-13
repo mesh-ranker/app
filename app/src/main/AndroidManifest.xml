@@ -43,5 +43,6 @@
             android:label="@string/login_title"
             android:theme="@style/Theme.MeshRanker"
             android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".FoodActivity" android:exported="false" />
     </application>
 </manifest>
