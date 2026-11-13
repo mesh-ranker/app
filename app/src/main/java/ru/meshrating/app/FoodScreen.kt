@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -166,7 +167,15 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
                             )
                         }
                     } else {
-                        items(mealList) { complex -> ComplexCard(complex) }
+                        itemsIndexed(mealList) { index, complex ->
+                            // На «Льготном» цены не показываем; первый блок
+                            // (основной) развёрнут по умолчанию.
+                            ComplexCard(
+                                complex = complex,
+                                showPrice = !freeMeal,
+                                expandedByDefault = index == 0
+                            )
+                        }
                     }
 
                     if (orders.length() > 0) {
@@ -315,8 +324,8 @@ private fun FeedingWeekRow(week: JSONObject?) {
 }
 
 @Composable
-private fun ComplexCard(complex: JSONObject) {
-    var expanded by remember { mutableStateOf(false) }
+private fun ComplexCard(complex: JSONObject, showPrice: Boolean, expandedByDefault: Boolean) {
+    var expanded by remember(complex.opt("id"), expandedByDefault) { mutableStateOf(expandedByDefault) }
     val dishes = complex.optJSONArray("dishes") ?: JSONArray()
     val kindLabel = complex.optString("kindLabel")
     val priceLabel = complex.optString("priceLabel")
@@ -345,7 +354,7 @@ private fun ComplexCard(complex: JSONObject) {
                     )
                 }
                 Spacer(Modifier.width(8.dp))
-                Text(priceLabel, fontWeight = FontWeight.Bold)
+                if (showPrice) Text(priceLabel, fontWeight = FontWeight.Bold)
                 if (dishes.length() > 0) {
                     Spacer(Modifier.width(4.dp))
                     Text(if (expanded) "▾" else "▸", color = MaterialTheme.colorScheme.onSurfaceVariant)

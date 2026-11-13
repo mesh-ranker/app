@@ -525,8 +525,17 @@ class MeshCoreTest {
         // Порядок приёмов пищи: завтрак, обед, полдник.
         assertEquals(listOf(0, 2, 3), MeshCore.foodMealKinds)
 
-        // Платное: все комплексы (у всех есть 1).
-        assertEquals(5, MeshCore.foodComplexesFor(complexes, free = false).length())
+        // Платное: все комплексы (у всех есть 1), «экспрессы» — в конце.
+        val paid = MeshCore.foodComplexesFor(complexes, free = false)
+        assertEquals(5, paid.length())
+        assertEquals("Завтрак 5-11", paid.getJSONObject(0).getString("name"))
+        assertEquals("Обед 5-11", paid.getJSONObject(1).getString("name"))
+        assertEquals("Полдник 5-11", paid.getJSONObject(2).getString("name"))
+        assertEquals("Экспресс 1", paid.getJSONObject(3).getString("name"))
+        assertEquals("Экспресс 2", paid.getJSONObject(4).getString("name"))
+        assertTrue(MeshCore.foodIsExpress(paid.getJSONObject(3)))
+        assertFalse(MeshCore.foodIsExpress(paid.getJSONObject(0)))
+
         // Льготное: только комплексы с 0 — завтрак и обед.
         val free = MeshCore.foodComplexesFor(complexes, free = true)
         assertEquals(2, free.length())

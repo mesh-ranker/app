@@ -1419,17 +1419,25 @@ object MeshCore {
         return days
     }
 
+    /** «Экспресс»-комплексы: в списке приёма пищи они идут после основного блока. */
+    fun foodIsExpress(complex: JSONObject): Boolean =
+        complex.optString("name").contains("экспресс", ignoreCase = true)
+
     /**
      * Комплексы выбранного режима оплаты: платные (`paymentTypes` содержит `1`)
-     * или льготные (`paymentTypes` содержит `0`). Порядок комплексов сохраняется.
+     * или льготные (`paymentTypes` содержит `0`). Основной блок приёма пищи идёт
+     * первым, «экспрессы» — в конце (порядок внутри групп сохраняется).
      */
     fun foodComplexesFor(all: JSONArray, free: Boolean): JSONArray {
-        val result = JSONArray()
+        val kept = mutableListOf<JSONObject>()
         for (i in 0 until all.length()) {
             val complex = all.optJSONObject(i) ?: continue
             val keep = if (free) complex.optBoolean("free", false) else complex.optBoolean("paid", true)
-            if (keep) result.put(complex)
+            if (keep) kept.add(complex)
         }
+        kept.sortBy { if (foodIsExpress(it)) 1 else 0 }
+        val result = JSONArray()
+        kept.forEach { result.put(it) }
         return result
     }
 
