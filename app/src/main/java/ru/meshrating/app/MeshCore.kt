@@ -1450,4 +1450,27 @@ object MeshCore {
         }
         return null
     }
+
+    /** Ключ дня недели в `feedingWeek` для даты: monday..sunday. */
+    fun feedingWeekKey(iso: String): String {
+        val cal = parseIso(iso)
+        val idx = (cal.get(Calendar.DAY_OF_WEEK) + 5) % 7 // понедельник = 0
+        return listOf("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")[idx]
+    }
+
+    /** Доступен ли день для питания согласно `feedingWeek` (если неделя не задана — доступен). */
+    fun isFeedingDay(week: JSONObject?, iso: String): Boolean {
+        if (week == null || week.length() == 0) return true
+        return week.optBoolean(feedingWeekKey(iso), true)
+    }
+
+    /** Следующий/предыдущий (`step` = ±1) доступный для питания день, пропуская недоступные. */
+    fun nextFeedingDate(startIso: String, week: JSONObject?, step: Int): String {
+        var cur = startIso
+        repeat(14) {
+            cur = addDays(cur, step)
+            if (isFeedingDay(week, cur)) return cur
+        }
+        return cur
+    }
 }

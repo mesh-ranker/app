@@ -82,8 +82,14 @@ fun FoodScreen(store: SessionStore, client: MeshClient, personId: String?) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp)) {
         DaySelector(
             date = selectedDate,
-            onPrev = { selectedDate = MeshCore.addDays(selectedDate, -1) },
-            onNext = { selectedDate = MeshCore.addDays(selectedDate, 1) }
+            onPrev = {
+                val week = state?.optJSONObject("feedingWeek")
+                selectedDate = MeshCore.nextFeedingDate(selectedDate, week, -1)
+            },
+            onNext = {
+                val week = state?.optJSONObject("feedingWeek")
+                selectedDate = MeshCore.nextFeedingDate(selectedDate, week, 1)
+            }
         )
         Spacer(Modifier.height(4.dp))
 
